@@ -1,0 +1,4 @@
+interface:
+  display_name: "PHP Pipeline Backend"
+  short_description: "Prepare PHP backends without request-time setup"
+  default_prompt: "Use $claviron-php-backend to update PHP pipeline preparation while preserving body ownership."

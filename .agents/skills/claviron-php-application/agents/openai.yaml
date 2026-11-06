@@ -1,0 +1,4 @@
+interface:
+  display_name: "PHP Persistent Application"
+  short_description: "Build and bind persistent embedded PHP applications"
+  default_prompt: "Use $claviron-php-application to prepare this PHP application for persistent execution."

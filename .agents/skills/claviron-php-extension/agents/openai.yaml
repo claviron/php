@@ -1,0 +1,4 @@
+interface:
+  display_name: "PHP Native Extension"
+  short_description: "Add native PHP functions, classes, and observers"
+  default_prompt: "Use $claviron-php-extension to expose this Rust capability to embedded PHP."

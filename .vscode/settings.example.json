@@ -1,0 +1,15 @@
+{
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnSave": false
+  },
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.checkOnSave": false,
+  "rust-analyzer.cargo.extraEnv": {
+    "SQLX_OFFLINE": "true"
+  },
+  "php-lsp.phpVersion": "8.5",
+  "php.executablePath": "/opt/php-zts-embed/bin/php",
+  "php-lsp.serverPath": "/Users/developer/.cargo/bin/php-lsp",
+  "php.validate.executablePath": "/opt/php-zts-embed/bin/php"
+}

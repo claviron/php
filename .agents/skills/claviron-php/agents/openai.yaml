@@ -1,0 +1,4 @@
+interface:
+  display_name: "PHP Integration"
+  short_description: "Select PHP engines and register Claviron services"
+  default_prompt: "Use $claviron-php to integrate PHP execution with this application's existing Claviron services."
