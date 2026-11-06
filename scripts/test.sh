@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
 done
 command -v cargo >/dev/null 2>&1 || fail "Cargo is required; install Rust first"
 
-project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd -- "$project_dir"
 export SQLX_OFFLINE="${SQLX_OFFLINE:-true}"
 
