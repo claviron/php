@@ -325,7 +325,7 @@ impl PhpSapiEngine {
         // the headers commit, and body bytes flow through an mpsc the PHP
         // thread keeps pushing into until the script finishes (or the
         // client disconnects). A stream can be made whole, a whole never a
-        // stream, and measured on bison it costs nothing (`docs/REVIEW.md`
+        // stream, and measured it costs nothing (`docs/REVIEW.md`
         // §3e). Holding a small reply to send it whole — and with it the
         // fatal-error rewrite to 500, which needs the reply still in hand —
         // is step 5b's sink.

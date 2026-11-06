@@ -347,7 +347,7 @@ impl PhpFcgiService {
     /// The only way a request reaches FPM: a stream can be made whole, a
     /// whole never a stream, and whether a reply is a page, SSE or a
     /// download shows only in its own head — too late to choose a method
-    /// by it. Measured on bison, the stream costs nothing next to reading
+    /// by it. Measured, the stream costs nothing next to reading
     /// the reply whole (`docs/REVIEW.md` §3e).
     pub async fn fcgi_execute_stream(
         &self,
