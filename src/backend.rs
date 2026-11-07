@@ -14,7 +14,7 @@ use std::sync::Arc;
 /// Install PHP preparation for this site registry. Both Edge and a single-site
 /// server can supply the registry; engine registration remains separate.
 pub fn register(registry: &SiteRegistry) -> Result<()> {
-    registry.register_backend_factory(Arc::new(PhpFactory))
+    registry.register_backend(Arc::new(PhpFactory))
 }
 
 struct PhpFactory;
