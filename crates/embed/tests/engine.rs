@@ -228,6 +228,7 @@ fn request_scheme_isolated_process() {
                         .unwrap();
                     if let Some(tls) = tls {
                         req.extensions_mut().insert(Arc::new(ConnCtx {
+                            transport: claviron_http::listener::ListenerTransport::Tcp,
                             state: Default::default(),
                             listener: "test".parse().unwrap(),
                             proto: None,
