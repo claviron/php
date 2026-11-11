@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use claviron_orbit::OrbitStateExt;
+use claviron_orbit::metrics::OrbitMetricCollector;
 use claviron_runtime::metrics::{MetricsFamily, MetricsProvider};
 use claviron_runtime::{AppState, registry};
-use orbitive::metrics::OrbitMetricCollector;
 
 use super::fcgi::{
     FCGI_METRICS, FCGI_REQUEST_METRICS, FcgiMetricsProvider, FcgiOrbitMetrics,

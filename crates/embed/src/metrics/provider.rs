@@ -2,12 +2,12 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use claviron_orbit::metrics::{OrbitMetricCollector, OrbitMetricPublisher};
 use claviron_orbit::shm::{ManagedShmProvider, ReusableOrbitRing};
 use claviron_orbit::{FleetProvider, OrbitStateExt};
 use claviron_runtime::metrics::{MetricsFamily, MetricsProvider};
 use claviron_runtime::registry::{Component, Runnable, priority};
 use claviron_runtime::{AppState, RunContext, registry};
-use orbitive::metrics::{OrbitMetricCollector, OrbitMetricPublisher};
 use tracing::{debug, error};
 
 use super::config::{PhpEmbedMetricsConfig, PhpEmbedMetricsConfigProvider};

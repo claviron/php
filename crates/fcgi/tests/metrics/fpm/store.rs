@@ -1,4 +1,4 @@
-use orbitive::metrics::{OrbitMetricSnapshot, OrbitTyped};
+use claviron_orbit::metrics::{OrbitMetricSnapshot, OrbitTyped};
 
 use super::{FpmPoolMetrics, FpmPoolOrbitMetrics};
 

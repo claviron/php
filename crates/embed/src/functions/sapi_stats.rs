@@ -17,8 +17,8 @@ use arc_swap::ArcSwapOption;
 use async_trait::async_trait;
 use claviron_orbit::shm::{
     ExistingBootPolicy, FinalizePolicy, ManagedShmProvider, ManagedShmResource,
-    ManagedShmResources, PhysicalShmState, ShmCreateOutcome,
-    ShmResourceDescriptor, ShmShape,
+    ManagedShmResources, PhysicalShmState, ShmCreateOutcome, ShmRegion,
+    ShmResourceDescriptor, ShmShape, ShmValidation, ring_segment_name,
 };
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::builders::FunctionBuilder;
@@ -164,7 +164,7 @@ struct Slot {
 }
 
 pub(crate) struct SapiStatsTable {
-    shm: orbitive::shm::ShmRegion,
+    shm: ShmRegion,
     self_idx: u8,
     worker_capacity: u8,
     state: claviron_runtime::AppState,
@@ -370,9 +370,7 @@ impl SapiStatsTable {
         // lock from create/open through header initialization so a peer cannot
         // mmap the object between `shm_open` and `ftruncate` on macOS.
         let (shm, initialization_lock) =
-            orbitive::shm::ShmRegion::open_or_create_locked(
-                &shm_name, total_size,
-            )?;
+            ShmRegion::open_or_create_locked(&shm_name, total_size)?;
         let is_creator = shm.created();
         let shm_ptr =
             NonNull::new(shm.as_ptr()).expect("SHM mapping is non-null");
@@ -832,7 +830,7 @@ fn insert_u8_list(
 /// `fleet_name` is the segment's fleet component: the Orbit fleet in a
 /// deployment, a test's own short name when it never joined one.
 fn shm_name_for(fleet_name: &str) -> String {
-    orbitive::shm::ring_segment_name(fleet_name, SAPI_STATS_KIND)
+    ring_segment_name(fleet_name, SAPI_STATS_KIND)
 }
 
 const fn shm_size(worker_capacity: usize) -> usize {
@@ -843,10 +841,10 @@ const fn shm_size(worker_capacity: usize) -> usize {
 fn validate_existing_when_ready(
     name: &str,
     minimum_size: usize,
-) -> io::Result<orbitive::shm::ShmValidation> {
+) -> io::Result<ShmValidation> {
     let mut last_error = None;
     for attempt in 0..=HEADER_READY_RETRIES {
-        match orbitive::shm::ShmRegion::validate_existing(name, minimum_size) {
+        match ShmRegion::validate_existing(name, minimum_size) {
             Ok(validation) => return Ok(validation),
             Err(error)
                 if attempt < HEADER_READY_RETRIES

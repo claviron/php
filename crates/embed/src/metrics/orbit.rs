@@ -1,9 +1,9 @@
 use super::PhpEmbedMetricsSnapshot;
 
 pub const PHP_EMBED_ORBIT_METRICS_WIRE_LEN: usize = 74;
-pub const PHP_EMBED_ORBIT_METRICS_RING_SPEC: orbitive::metrics::RingSpec =
-    orbitive::metrics::RingSpec::new(
-        orbitive::metrics::METRIC_SNAPSHOT_RING_CAPACITY,
+pub const PHP_EMBED_ORBIT_METRICS_RING_SPEC: claviron_orbit::metrics::RingSpec =
+    claviron_orbit::metrics::RingSpec::new(
+        claviron_orbit::metrics::METRIC_SNAPSHOT_RING_CAPACITY,
         PHP_EMBED_ORBIT_METRICS_WIRE_LEN,
     );
 
@@ -55,13 +55,13 @@ impl PhpEmbedOrbitMetrics {
     }
 }
 
-impl orbitive::metrics::OrbitTyped for PhpEmbedOrbitMetrics {
+impl claviron_orbit::metrics::OrbitTyped for PhpEmbedOrbitMetrics {
     const KIND: u8 = 214;
-    const RING_SPEC: orbitive::metrics::RingSpec =
+    const RING_SPEC: claviron_orbit::metrics::RingSpec =
         PHP_EMBED_ORBIT_METRICS_RING_SPEC;
 }
 
-impl orbitive::metrics::OrbitMetricSnapshot for PhpEmbedOrbitMetrics {
+impl claviron_orbit::metrics::OrbitMetricSnapshot for PhpEmbedOrbitMetrics {
     const FAMILY: &'static str = "claviron_ephp_worker_metrics";
 
     fn node_id(&self) -> u16 {

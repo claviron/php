@@ -34,7 +34,7 @@ fn invocation_log_appends_in_each_programs_cwd() {
                 &invocation.encode_invocation().unwrap(),
             )
             .unwrap();
-            let id = InvocationId::from_net_id(orbitive::NetId64::make(
+            let id = InvocationId::from_net_id(claviron_orbit::NetId64::make(
                 241, 0, counter,
             ));
             let program =

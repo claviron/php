@@ -17,7 +17,7 @@ categories = ["web-programming::http-server", "network-programming", "asynchrono
 # The native Backend owner: the request contract alone, not Edge.
 backend = ["dep:claviron-pipeline"]
 default = []
-metrics = ["claviron-runtime/metrics", "dep:serde_json", "orbitive/metrics"]
+metrics = ["claviron-runtime/metrics", "dep:serde_json", "claviron-orbit/metrics"]
 tasks = ["dep:claviron-tasks", "dep:futures"]
 
 [dependencies]
@@ -57,9 +57,6 @@ tracing.workspace = true
 
 # ── Misc utilities ──────────────────────────────────────────────────────
 bytes.workspace = true
-
-# ── Published sibling libraries shared through workspace dependencies ───
-orbitive.workspace = true
 
 [dev-dependencies]
 # ── Async runtime & primitives ──────────────────────────────────────────

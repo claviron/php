@@ -11,9 +11,9 @@ use serde::{Deserialize, Serialize};
 
 pub const FPM_POOL_ORBIT_METRICS_PAYLOAD_CAPACITY: usize = 256;
 
-pub const FPM_POOL_ORBIT_METRICS_RING_SPEC: orbitive::metrics::RingSpec =
-    orbitive::metrics::RingSpec::new(
-        orbitive::metrics::KEYED_METRIC_RING_CAPACITY,
+pub const FPM_POOL_ORBIT_METRICS_RING_SPEC: claviron_orbit::metrics::RingSpec =
+    claviron_orbit::metrics::RingSpec::new(
+        claviron_orbit::metrics::KEYED_METRIC_RING_CAPACITY,
         FPM_POOL_ORBIT_METRICS_PAYLOAD_CAPACITY,
     );
 
@@ -318,13 +318,13 @@ impl FpmPoolOrbitMetrics {
     }
 }
 
-impl orbitive::metrics::OrbitTyped for FpmPoolOrbitMetrics {
+impl claviron_orbit::metrics::OrbitTyped for FpmPoolOrbitMetrics {
     const KIND: u8 = 216;
-    const RING_SPEC: orbitive::metrics::RingSpec =
+    const RING_SPEC: claviron_orbit::metrics::RingSpec =
         FPM_POOL_ORBIT_METRICS_RING_SPEC;
 }
 
-impl orbitive::metrics::OrbitMetricSnapshot for FpmPoolOrbitMetrics {
+impl claviron_orbit::metrics::OrbitMetricSnapshot for FpmPoolOrbitMetrics {
     const FAMILY: &'static str = "claviron_fpm_pool_metrics";
 
     fn node_id(&self) -> u16 {
@@ -415,7 +415,7 @@ impl orbitive::metrics::OrbitMetricSnapshot for FpmPoolOrbitMetrics {
     }
 }
 
-impl orbitive::metrics::OrbitMetricKeyedSnapshot for FpmPoolOrbitMetrics {
+impl claviron_orbit::metrics::OrbitMetricKeyedSnapshot for FpmPoolOrbitMetrics {
     type Key = String;
 
     fn metric_key(&self) -> Self::Key {

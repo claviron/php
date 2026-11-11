@@ -1,9 +1,9 @@
 use super::FcgiScalarMetricsSnapshot;
 
 pub const FCGI_ORBIT_METRICS_WIRE_LEN: usize = 74;
-pub const FCGI_ORBIT_METRICS_RING_SPEC: orbitive::metrics::RingSpec =
-    orbitive::metrics::RingSpec::new(
-        orbitive::metrics::METRIC_SNAPSHOT_RING_CAPACITY,
+pub const FCGI_ORBIT_METRICS_RING_SPEC: claviron_orbit::metrics::RingSpec =
+    claviron_orbit::metrics::RingSpec::new(
+        claviron_orbit::metrics::METRIC_SNAPSHOT_RING_CAPACITY,
         FCGI_ORBIT_METRICS_WIRE_LEN,
     );
 
@@ -57,12 +57,13 @@ impl FcgiOrbitMetrics {
     }
 }
 
-impl orbitive::metrics::OrbitTyped for FcgiOrbitMetrics {
+impl claviron_orbit::metrics::OrbitTyped for FcgiOrbitMetrics {
     const KIND: u8 = 215;
-    const RING_SPEC: orbitive::metrics::RingSpec = FCGI_ORBIT_METRICS_RING_SPEC;
+    const RING_SPEC: claviron_orbit::metrics::RingSpec =
+        FCGI_ORBIT_METRICS_RING_SPEC;
 }
 
-impl orbitive::metrics::OrbitMetricSnapshot for FcgiOrbitMetrics {
+impl claviron_orbit::metrics::OrbitMetricSnapshot for FcgiOrbitMetrics {
     const FAMILY: &'static str = "claviron_fcgi_worker_metrics";
 
     fn node_id(&self) -> u16 {

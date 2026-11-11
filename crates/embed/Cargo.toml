@@ -32,7 +32,7 @@ default = ["opcache-intercept"]
 # applications and multi-worker execution. Neither feature is facade-forwarded.
 apcu-intercept = []
 opcache-intercept = []
-metrics = ["claviron-runtime/metrics", "orbitive/metrics"]
+metrics = ["claviron-runtime/metrics", "claviron-orbit/metrics"]
 tasks = ["dep:claviron-tasks"]
 cache = ["dep:claviron-cache"]
 auth = ["dep:claviron-auth", "dep:uuid"]
@@ -121,7 +121,6 @@ regex.workspace = true
 
 # ── Published sibling libraries shared through workspace dependencies ───
 congif.workspace = true
-orbitive.workspace = true
 
 [dev-dependencies]
 # ── Async runtime & primitives ──────────────────────────────────────────
