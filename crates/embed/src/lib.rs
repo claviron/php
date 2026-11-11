@@ -90,7 +90,7 @@ pub fn register_application_from_yaml(
 }
 
 /// Validate the owner of a linked PHP application's execution and queue bounds.
-pub fn linked_application_instances(
+pub fn link_application_instances(
     php: &serde_yaml::Value,
     orbit: Option<&serde_yaml::Value>,
 ) -> claviron_runtime::registry::Result<Option<usize>> {
@@ -134,7 +134,7 @@ pub fn linked_application_instances(
 }
 
 /// Register a persistent PHP application behind Link. Link owns its queue.
-pub fn register_linked_application_from_yaml(
+pub fn register_link_application_from_yaml(
     state: &AppState,
     name: &str,
     yaml: &str,
