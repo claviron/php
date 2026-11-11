@@ -46,6 +46,9 @@ impl DispatchStep for Application {
 impl BackendHandler for Application {
     fn contract(&self) -> BackendContract {
         BackendContract {
+            execution: claviron_runtime::ExecutorSpec::Dedicated(
+                claviron_runtime::ExecutorKind::CurrentThread,
+            ),
             identity: BackendIdentity::Request,
             reply: BackendReply::Owner,
         }

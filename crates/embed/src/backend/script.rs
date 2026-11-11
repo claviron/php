@@ -1,7 +1,10 @@
 use super::*;
 use crate::{PhpScriptAdapter, PhpScriptService};
 
-struct Script(PhpScriptAdapter);
+struct Script {
+    adapter: PhpScriptAdapter,
+    execution: claviron_runtime::ExecutorSpec,
+}
 
 pub(super) fn prepare(
     state: &AppState,
@@ -13,7 +16,11 @@ pub(super) fn prepare(
             "PhpScriptService is not registered",
         ));
     };
-    Ok(Arc::new(Script(PhpScriptAdapter::new(service, runtime))))
+    let execution = service.execution();
+    Ok(Arc::new(Script {
+        adapter: PhpScriptAdapter::new(service, runtime),
+        execution,
+    }))
 }
 
 impl DispatchStep for Script {
@@ -22,7 +29,7 @@ impl DispatchStep for Script {
         request: Request<RouteBody>,
         _context: Option<claviron_pipeline::HostContext<'_>>,
     ) -> DispatchCall {
-        let adapter = self.0.clone();
+        let adapter = self.adapter.clone();
         DispatchCall::new(async move {
             match adapter.try_handle(request).await {
                 Ok(ServiceResult::Handled(response)) => {
@@ -44,6 +51,7 @@ impl DispatchStep for Script {
 impl BackendHandler for Script {
     fn contract(&self) -> BackendContract {
         BackendContract {
+            execution: self.execution.clone(),
             identity: BackendIdentity::Request,
             reply: BackendReply::Owner,
         }

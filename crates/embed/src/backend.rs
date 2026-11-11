@@ -49,6 +49,7 @@ struct UnavailableApplication;
 impl BackendHandler for UnavailableApplication {
     fn contract(&self) -> BackendContract {
         BackendContract {
+            execution: claviron_runtime::ExecutorSpec::Inherit,
             identity: BackendIdentity::None,
             reply: BackendReply::Owner,
         }

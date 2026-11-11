@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -11,7 +12,9 @@ use claviron_app::{
 use claviron_http::{RouteBody, RouteResponse};
 use claviron_php_core::PhpRuntime;
 use claviron_runtime::registry::{self, Component, Runnable, priority};
-use claviron_runtime::{AppState, RunContext, ServiceStartPolicy};
+use claviron_runtime::{
+    AppState, ExecutorKind, ExecutorSpec, RunContext, ServiceStartPolicy,
+};
 use http::Request;
 use tokio::sync::Mutex;
 use tracing::info;
@@ -115,6 +118,19 @@ impl PhpScriptService {
         req: Request<RouteBody>,
     ) -> Result<RouteResponse, SapiGatewayError> {
         self.runtime.execute(runtime, sapi_req, req).await
+    }
+
+    /// Placement of HTTP scripts in the SAPI request pool. The elastic
+    /// execution model belongs to script-mode configuration.
+    pub fn execution(&self) -> ExecutorSpec {
+        self.runtime
+            .options
+            .request_pool
+            .as_ref()
+            .and_then(|pool| NonZeroUsize::new(usize::from(pool.max_size)))
+            .map_or(ExecutorSpec::Inherit, |threads| {
+                ExecutorSpec::Dedicated(ExecutorKind::MultiThread { threads })
+            })
     }
 
     pub fn pool_snapshot(&self) -> Option<SapiThreadPoolSnapshot> {
