@@ -85,7 +85,62 @@ pub fn register_application_from_yaml(
     yaml: &str,
     description: claviron_app::ApplicationDescription,
 ) -> claviron_runtime::registry::Result<()> {
-    config::file::load_application(state, name, yaml, description)?
+    config::file::load_application(state, name, yaml, description, false)?
+        .register(state)
+}
+
+/// Validate the owner of a linked PHP application's execution and queue bounds.
+pub fn linked_application_instances(
+    php: &serde_yaml::Value,
+    orbit: Option<&serde_yaml::Value>,
+) -> claviron_runtime::registry::Result<Option<usize>> {
+    use claviron_runtime::registry::Error;
+
+    let Some(link) = orbit
+        .and_then(|orbit| orbit.get("link"))
+        .filter(|link| !link.is_null())
+    else {
+        return Ok(None);
+    };
+    let application = php.get("application");
+    if application.is_some_and(|app| app.get("max_waiting").is_some()) {
+        return Err(Error::msg(
+            "php.application.max_waiting was removed; orbit.link.max_queued counts only waiting exchanges",
+        ));
+    }
+    if application.is_some_and(|app| app.get("max_queued").is_some()) {
+        return Err(Error::msg(
+            "php.application.max_queued is owned by Link; use orbit.link.max_queued",
+        ));
+    }
+    if link.get("max_in_flight").is_some() {
+        return Err(Error::msg(
+            "orbit.link.max_in_flight is set by php.application.instances; remove orbit.link.max_in_flight",
+        ));
+    }
+    let instances = application
+        .and_then(|app| app.get("instances"))
+        .filter(|value| !value.is_null())
+        .map(|value| serde_yaml::from_value::<u8>(value.clone()))
+        .transpose()
+        .map_err(|error| {
+            Error::msg(format!("php.application.instances: {error}"))
+        })?
+        .unwrap_or_else(config::default_application_instances);
+    if instances == 0 {
+        return Err(Error::msg("php.application.instances must be at least 1"));
+    }
+    Ok(Some(usize::from(instances)))
+}
+
+/// Register a persistent PHP application behind Link. Link owns its queue.
+pub fn register_linked_application_from_yaml(
+    state: &AppState,
+    name: &str,
+    yaml: &str,
+    description: claviron_app::ApplicationDescription,
+) -> claviron_runtime::registry::Result<()> {
+    config::file::load_application(state, name, yaml, description, true)?
         .register(state)
 }
 

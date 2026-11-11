@@ -15,6 +15,11 @@ The `backend` feature exposes `backend::prepare_script` and
 or listener. The facade's backend factory decodes PHP directives and prepares
 these owners before request dispatch.
 
+A persistent application runs one exchange per `instances` slot.
+`max_queued` counts exchanges that may wait for a slot. Zero disables waiting.
+Behind Orbit Link, the runner uses those instances as its execution bound
+and configures the only queue with `orbit.link.max_queued`.
+
 Shared configuration and runtime values come from `claviron-php-core`.
 PHP-FPM execution belongs to the separate FCGI engine.
 

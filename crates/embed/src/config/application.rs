@@ -22,7 +22,7 @@ pub struct PhpApplication {
     pub(crate) environment: BTreeMap<String, String>,
     pub(crate) env_file: Vec<PathBuf>,
     pub(crate) instances: u8,
-    pub(crate) max_waiting: usize,
+    max_queued: Option<usize>,
     pub(crate) execution_timeout: Option<Duration>,
     pub(crate) retry: ApplicationRetryPolicy,
 }
@@ -42,7 +42,7 @@ impl PhpApplication {
             environment: BTreeMap::new(),
             env_file: Vec::new(),
             instances: default_instances(),
-            max_waiting: default_max_waiting(),
+            max_queued: None,
             execution_timeout: None,
             retry: ApplicationRetryPolicy::new(
                 default_backoff(),
@@ -135,21 +135,27 @@ impl PhpApplication {
         if self.instances == 0 {
             return Err("PHP application instances must be at least 1".into());
         }
-        if self.max_waiting == 0
-            || self.max_waiting > tokio::sync::Semaphore::MAX_PERMITS
-        {
-            return Err("PHP application max_waiting must be a positive supported capacity".into());
+        if self.admission_capacity().is_none() {
+            return Err("PHP application instances + max_queued exceeds the supported capacity".into());
         }
         self.retry.validate("retry")
     }
 
-    /// Maximum admitted callers, including body ingestion and waiting for an inbox.
-    pub fn max_waiting(
+    /// Maximum callers that can wait for an instance. Zero disables waiting.
+    pub fn max_queued(
         mut self,
         value: usize,
     ) -> Self {
-        self.max_waiting = value;
+        self.max_queued = Some(value);
         self
+    }
+
+    pub(crate) fn admission_capacity(&self) -> Option<usize> {
+        let instances = usize::from(self.instances);
+        let queued = self.max_queued.unwrap_or(DEFAULT_ADMITTED - instances);
+        instances
+            .checked_add(queued)
+            .filter(|&capacity| capacity <= tokio::sync::Semaphore::MAX_PERMITS)
     }
 
     /// Execution budget for one request or event; None uses the runtime policy.
@@ -171,12 +177,10 @@ impl PhpApplication {
     }
 }
 
-pub(super) fn default_instances() -> u8 {
+pub(crate) fn default_instances() -> u8 {
     1
 }
-pub(super) fn default_max_waiting() -> usize {
-    256
-}
+const DEFAULT_ADMITTED: usize = 256;
 fn default_backoff() -> Duration {
     Duration::from_secs(1)
 }

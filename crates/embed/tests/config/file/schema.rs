@@ -70,3 +70,37 @@ fn persistent_application_rejects_the_retired_elastic_pool_schema() {
         "example", |_| None,
     ).is_err());
 }
+
+#[test]
+fn linked_application_uses_its_instances_without_an_engine_queue() {
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/config/program.php");
+    let raw = format!(
+        "application: {{script_path: {}, instances: 8}}",
+        serde_yaml::to_string(&script).unwrap().trim()
+    );
+    let mut config = parse_application(&raw, "example", |_| None).unwrap();
+    config.use_link_queue("example").unwrap();
+    let resolved = config.resolve().unwrap();
+    assert_eq!(resolved.applications[0].admission_capacity(), Some(8));
+
+    let raw = raw.replace("instances: 8", "instances: 8, max_queued: 4");
+    let mut config = parse_application(&raw, "example", |_| None).unwrap();
+    assert!(
+        config
+            .use_link_queue("example")
+            .unwrap_err()
+            .to_string()
+            .contains("use orbit.link.max_queued")
+    );
+    assert_eq!(
+        config.resolve().unwrap().applications[0].admission_capacity(),
+        Some(12)
+    );
+
+    let raw = raw.replace("max_queued: 4", "max_waiting: null");
+    let error = parse_application(&raw, "example", |_| None).unwrap_err();
+    assert!(
+        error.to_string().contains("max_queued counts only waiting exchanges")
+    );
+}

@@ -87,6 +87,22 @@ impl Default for PhpConfig {
 }
 
 impl PhpConfig {
+    pub(super) fn use_link_queue(
+        &mut self,
+        name: &str,
+    ) -> Result<()> {
+        let application = self.applications.get_mut(name).ok_or_else(|| {
+            Error::msg("PHP configuration is missing application")
+        })?;
+        if application.max_queued.is_some() {
+            return Err(Error::msg(
+                "php.application.max_queued is owned by Link; use orbit.link.max_queued",
+            ));
+        }
+        application.max_queued = Some(0);
+        Ok(())
+    }
+
     pub(super) fn resolve(self) -> Result<ResolvedConfig> {
         self.events.validate().map_err(Error::msg)?;
         let cache_invalidation =
@@ -324,7 +340,13 @@ struct ApplicationConfig {
     #[serde(default)]
     instances: Option<u8>,
     #[serde(default)]
-    max_waiting: Option<usize>,
+    max_queued: Option<usize>,
+    #[serde(
+        default,
+        rename = "max_waiting",
+        deserialize_with = "reject_max_waiting"
+    )]
+    _retired_max_waiting: (),
     /// Budget for one request or event on an instance; unset takes
     /// `lifecycle.execution_timeout`. Running, not request handling: events
     /// arrive with no route.
@@ -354,7 +376,7 @@ impl ApplicationConfig {
     ) -> Result<PhpApplication> {
         if self.requests.is_some() {
             return Err(Error::msg(format!(
-                "php.yaml applications.{name}.requests is gone: max_waiting and execution_timeout go directly under the application; dispatch_queue_timeout is requests.queue_timeout and response_limit is responses.max_body_size, written on the route that selects it"
+                "php.yaml applications.{name}.requests is gone: max_queued and execution_timeout go directly under the application; dispatch_queue_timeout is requests.queue_timeout and response_limit is responses.max_body_size, written on the route that selects it"
             )));
         }
         let defaults = PhpApplication::new(name, self.script_path)
@@ -366,20 +388,16 @@ impl ApplicationConfig {
             self.retry.backoff_max.unwrap_or(defaults.retry.backoff_max()),
             self.retry.max_attempts,
         );
-        let mut application =
-            defaults
-                .instances(
-                    self.instances.unwrap_or(
-                        super::super::application::default_instances(),
-                    ),
-                )
-                .max_waiting(
-                    self.max_waiting.unwrap_or(
-                        super::super::application::default_max_waiting(),
-                    ),
-                )
-                .execution_timeout(self.execution_timeout)
-                .retry(retry);
+        let mut application = defaults
+            .instances(
+                self.instances
+                    .unwrap_or(super::super::application::default_instances()),
+            )
+            .execution_timeout(self.execution_timeout)
+            .retry(retry);
+        if let Some(max_queued) = self.max_queued {
+            application = application.max_queued(max_queued);
+        }
         if let Some(frameworks) = self.frameworks {
             application = application.frameworks(frameworks);
         }
@@ -464,3 +482,11 @@ fn default_metrics_max_age() -> Duration {
 #[cfg(test)]
 #[path = "../../../tests/config/file/schema.rs"]
 mod tests;
+
+fn reject_max_waiting<'de, D: serde::Deserializer<'de>>(
+    _: D
+) -> std::result::Result<(), D::Error> {
+    Err(serde::de::Error::custom(
+        "max_waiting was removed; max_queued counts only waiting exchanges",
+    ))
+}

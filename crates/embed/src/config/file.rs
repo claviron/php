@@ -36,10 +36,14 @@ pub(crate) fn load_application(
     name: &str,
     raw: &str,
     description: claviron_app::ApplicationDescription,
+    linked: bool,
 ) -> Result<PhpEmbedRuntime> {
-    let config = schema::parse_application(raw, name, |key| {
+    let mut config = schema::parse_application(raw, name, |key| {
         state.env_snapshot().get(key)
     })?;
+    if linked {
+        config.use_link_queue(name)?;
+    }
     let runtime = config.resolve()?.describe(description).build();
     runtime.validate()?;
     Ok(runtime)

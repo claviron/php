@@ -10,7 +10,7 @@ fn configuration_is_local_and_validated() {
     let script = ScriptFixture::new();
     let duplicate = ScriptFixture::new();
     let app =
-        PhpApplication::new("web", script.path()).instances(8).max_waiting(64);
+        PhpApplication::new("web", script.path()).instances(8).max_queued(56);
     assert!(app.validate().is_ok());
     assert!(app.clone().instances(0).validate().is_err());
     assert!(

@@ -12,6 +12,7 @@ use serde::Deserialize;
 
 mod application;
 pub use application::PhpApplication;
+pub(crate) use application::default_instances as default_application_instances;
 pub(crate) mod file;
 mod pool;
 pub use pool::RequestPool;

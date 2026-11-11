@@ -52,7 +52,9 @@ impl ApplicationWorkers {
             return Err("application script is not a file".into());
         }
         let requests = ApplicationRequests::new(
-            definition.max_waiting,
+            definition
+                .admission_capacity()
+                .expect("validated application capacity"),
             Arc::clone(&lifecycle),
         );
         let slots = (0..definition.instances)
@@ -321,7 +323,10 @@ impl ApplicationWorkers {
                 .iter()
                 .all(|s| s.handle.is_none() && s.joining.is_none())
             && self.requests.admission.available_permits()
-                == self.definition.max_waiting
+                == self
+                    .definition
+                    .admission_capacity()
+                    .expect("validated application capacity")
     }
 }
 impl Drop for ApplicationWorkers {
