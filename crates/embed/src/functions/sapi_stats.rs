@@ -428,7 +428,7 @@ impl SapiStatsTable {
         slot.seq.store(odd, Ordering::Release);
 
         slot.updated_at_unix_ms = now_unix_ms();
-        slot.pid = std::process::id();
+        slot.pid = self.state.pid();
         slot.worker_id = self.self_idx + 1;
         slot.present = 1;
         slot.accepting = u8::from(snapshot.accepting);

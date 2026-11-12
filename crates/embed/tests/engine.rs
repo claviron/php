@@ -34,6 +34,7 @@ pub(super) fn runtime(root: std::path::PathBuf) -> Arc<PhpRuntime> {
         php_runner: PhpRunner::Script,
         application: None,
         server_run_mode: RunMode::Standalone,
+        server_pid: std::process::id(),
         server_worker_count: 1,
         server_hostname: "test-host".to_string(),
         server_software: "claviron-test".to_string(),

@@ -82,6 +82,7 @@ pub struct PhpRuntime {
 
     /// Server run mode (master / worker / standalone), pinned at boot and accessible in request handlers.
     pub server_run_mode: RunMode,
+    pub server_pid: u32,
 
     /// Total worker slots visible to this process, pinned at boot.
     pub server_worker_count: u8,
@@ -201,6 +202,7 @@ impl PhpRuntime {
             php_runner: template.runner,
             application: template.application.clone(),
             server_run_mode: state.run_mode(),
+            server_pid: state.pid(),
             server_worker_count: state.worker_count(),
             server_software: state.name().to_string(),
             server_hostname: state.hostname().to_string(),

@@ -107,8 +107,7 @@ pub fn init_server_scoped_vars(state: &AppState) {
         worker_count: CString::new(state.worker_count().to_string())
             .unwrap_or_default(),
         run_mode: state.run_mode(),
-        process_id: CString::new(std::process::id().to_string())
-            .unwrap_or_default(),
+        process_id: CString::new(state.pid().to_string()).unwrap_or_default(),
         software: CString::new(state.name().to_string()).unwrap_or_default(),
     });
 }
@@ -140,7 +139,7 @@ fn visit_execution_identity(
         visit(c"CLAVIRON_HOSTNAME", &runtime.server_hostname);
         visit(c"CLAVIRON_RUNNER", &run_identifier(runtime.server_run_mode));
         visit(c"CLAVIRON_RUN_MODE", runtime.server_run_mode.as_env_value());
-        visit(c"CLAVIRON_PROCESS_ID", &std::process::id().to_string());
+        visit(c"CLAVIRON_PROCESS_ID", &runtime.server_pid.to_string());
         let worker = match runtime.server_run_mode {
             RunMode::Worker(id) => id.raw(),
             _ => 0,

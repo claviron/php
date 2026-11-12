@@ -75,6 +75,7 @@ pub async fn run_fixture(
         php_runner: PhpRunner::Script,
         application: None,
         server_run_mode: RunMode::Standalone,
+        server_pid: std::process::id(),
         server_worker_count: 1,
         server_hostname: "app.test".to_owned(),
         server_software: "claviron-test".to_owned(),
