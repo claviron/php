@@ -37,7 +37,7 @@ impl BackendHandler for Fcgi {
         BackendContract {
             execution: claviron_runtime::ExecutorSpec::Inherit,
             identity: BackendIdentity::Request,
-            reply: BackendReply::ExternalEventStream(self.shutdown.clone()),
+            reply: BackendReply::Relay(self.shutdown.clone()),
         }
     }
 }

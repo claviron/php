@@ -32,6 +32,108 @@ fn stdout_record(payload: &[u8]) -> Vec<u8> {
     rec
 }
 
+#[cfg(feature = "backend")]
+#[tokio::test]
+async fn fcgi_relay_buffers_small_replies_and_streams_overflow_and_sse() {
+    use claviron_http::ext::{ConnCtx, HostKey, HostName, RequestArrival};
+    use claviron_http::policy::{Buffering, HttpPolicy, ResponsePolicy};
+    use claviron_php_core::{PhpConfig, PhpRuntime};
+    use claviron_pipeline::plan::{Backend, HostContext, HostPipelineBuilder};
+    use http::{Request, header::CONTENT_TYPE};
+    use http_body::Body;
+    use http_body_util::BodyExt;
+
+    for (content_type, initial, tail) in [
+        ("text/plain", "OK", None),
+        ("text/plain", "overflow", Some("!")),
+        ("text/event-stream", "", Some("data: ok\n\n")),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("fpm.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        std::fs::write(
+            dir.path().join("fpm.yaml"),
+            format!("fpm:\n  test:\n    unix: {}\n", socket.display()),
+        )
+        .unwrap();
+
+        let (release, released) = oneshot::channel();
+        let fpm = tokio::spawn(async move {
+            let (mut conn, _) = listener.accept().await.unwrap();
+            let head = format!("Content-Type: {content_type}\r\n\r\n{initial}");
+            conn.write_all(&stdout_record(head.as_bytes())).await.unwrap();
+            if let Some(tail) = tail {
+                released.await.unwrap();
+                conn.write_all(&stdout_record(tail.as_bytes())).await.unwrap();
+            }
+            conn.write_all(&end_request_record()).await.unwrap();
+        });
+
+        let state = AppState::standalone("fcgi-relay", dir.path());
+        let service = Arc::new(PhpFcgiService::from_state(state.clone()));
+        service.rebuild(&state).await.unwrap();
+        state.registry_ref().register(service).unwrap();
+        let config: PhpConfig = serde_yaml::from_str(
+            "runner: fcgi\nfpm: [test]\nentry_script: index.php",
+        )
+        .unwrap();
+        let runtime =
+            PhpRuntime::from_config(&state, &config, dir.path().into(), &[]);
+        let responses = ResponsePolicy {
+            buffering: Buffering::BufferDefault,
+            buffer_size: Some(4),
+            ..ResponsePolicy::unlimited()
+        };
+        let policy = HttpPolicy { responses, ..HttpPolicy::unlimited() };
+        let mut builder = HostPipelineBuilder::<()>::new();
+        builder
+            .layer(Backend::new(
+                crate::backend::prepare(&state, runtime).unwrap(),
+                policy,
+            ))
+            .unwrap();
+        let execution = builder.build().into_execution();
+        let conn = Arc::new(ConnCtx {
+            transport: claviron_http::listener::ListenerTransport::Tcp,
+            state: Default::default(),
+            listener: "test".parse().unwrap(),
+            proto: Some(claviron_http::listener::HttpProtocol::H1),
+            remote: "127.0.0.1:1234".parse().unwrap(),
+            local_ip: "127.0.0.1".parse().unwrap(),
+            local_port: 8080,
+            real_ip: None,
+            country_code: None,
+            tls: None,
+        });
+        let host = HostName(Arc::new("app.test".parse().unwrap()));
+        let key = HostKey(Arc::new("app.test".parse().unwrap()));
+        let context = HostContext::new(&conn, RequestArrival::Established)
+            .with_host(&host, &key);
+
+        timeout(Duration::from_secs(5), async {
+            let request = Request::new(claviron_http::empty_body());
+            let response =
+                execution.handle_in(request, Some(context)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[CONTENT_TYPE], content_type);
+            assert_eq!(
+                response.body().size_hint().exact(),
+                tail.is_none().then_some(2)
+            );
+            if tail.is_some() {
+                // FPM cannot finish until the pipeline has returned the head.
+                release.send(()).unwrap();
+            }
+            let bytes =
+                response.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(bytes, format!("{initial}{}", tail.unwrap_or("")));
+            fpm.await.unwrap();
+        })
+        .await
+        .expect("FastCGI relay must complete");
+    }
+}
+
 /// A streamed response the client walks away from must retire its
 /// connection, not re-publish it.
 ///

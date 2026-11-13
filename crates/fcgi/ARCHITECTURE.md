@@ -30,8 +30,10 @@ It selects neither Edge nor a listener.
 The application registers `PhpFcgiService`. Congif prepares `fpm.yaml`;
 the service creates and publishes its configured pools during lifecycle boot.
 A prepared PHP backend resolves the service, retains its selected runtime and
-declares identity export and external event-stream shutdown through
-`BackendContract`.
+declares identity export and `BackendReply::Relay` through `BackendContract`.
+The pipeline applies the prepared response policy to FPM's headers and body.
+Small replies can complete in the buffer, overflowing replies continue as
+streams, and SSE starts streaming immediately and ends on shutdown.
 
 The PHP facade resolves the site prefix, document mapping and execution runner
 at boot/reload. Requests retain their original URI. A pinned entry script
