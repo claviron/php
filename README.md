@@ -18,6 +18,9 @@ The PHP family uses Claviron's individual crates directly.
 
 ## Pipeline integration
 
+Enable `edge` to install the `php:` route factory on Edge through
+`claviron_php::register(state)`.
+
 Add `backend` to prepare PHP route directives through
 `claviron_pipeline::SiteRegistry`. It selects no Edge, listener or transport.
 

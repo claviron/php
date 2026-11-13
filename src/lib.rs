@@ -13,7 +13,7 @@ pub use claviron_php_fcgi as fcgi;
 pub mod backend;
 
 /// Register the selected engines in the application's lifecycle registry.
-/// This does not open a listener or register a pipeline factory.
+/// With `edge`, also install the `php:` route factory on Edge.
 #[cfg(any(feature = "embed", feature = "fcgi"))]
 pub fn register(
     state: &claviron_runtime::AppState
@@ -22,6 +22,9 @@ pub fn register(
     fcgi::register(state)?;
     #[cfg(feature = "embed")]
     embed::register(state)?;
-    let _ = state;
+    #[cfg(feature = "edge")]
+    if let Some(hosts) = state.registry_ref().resolve::<claviron_edge::HostAppRegistry>() {
+        backend::register(hosts.site())?;
+    }
     Ok(())
 }

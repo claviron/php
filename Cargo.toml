@@ -18,6 +18,7 @@ default = []
 embed = ["dep:claviron-php-core", "claviron-php-core/php_embed", "dep:claviron-php-embed", "dep:claviron-runtime"]
 fcgi = ["dep:claviron-php-core", "claviron-php-core/php_fcgi", "dep:claviron-php-fcgi", "dep:claviron-runtime"]
 backend = ["dep:claviron-pipeline", "dep:claviron-http", "dep:serde_yaml", "claviron-php-embed?/backend", "claviron-php-fcgi?/backend"]
+edge = ["backend", "dep:claviron-edge"]
 metrics = ["claviron-php-embed?/metrics", "claviron-php-fcgi?/metrics"]
 tasks = ["claviron-php-embed?/tasks", "claviron-php-fcgi?/tasks"]
 auth = ["claviron-php-embed?/auth"]
@@ -29,9 +30,10 @@ postgres = ["claviron-php-embed?/postgres"]
 
 [dependencies]
 claviron-php-core = { workspace = true, optional = true }
-claviron-php-embed = { version = "0.2.1", path = "crates/embed", optional = true }
-claviron-php-fcgi = { version = "0.2.1", path = "crates/fcgi", optional = true }
+claviron-php-embed = { version = "0.2.2", path = "crates/embed", optional = true }
+claviron-php-fcgi = { version = "0.2.2", path = "crates/fcgi", optional = true }
 claviron-pipeline = { workspace = true, optional = true }
+claviron-edge = { version = "0.2.1", optional = true }
 claviron-http = { workspace = true, optional = true }
 claviron-runtime = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
@@ -44,7 +46,7 @@ members = ["crates/core", "crates/embed", "crates/fcgi"]
 resolver = "3"
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/claviron/php"
@@ -65,7 +67,7 @@ claviron-helpers = { version = "0.2.1" }
 claviron-http = { version = "0.2.1" }
 claviron-logging = { version = "0.2.1" }
 claviron-orbit = { version = "0.2.1" }
-claviron-php-core = { version = "0.2.1", path = "crates/core" }
+claviron-php-core = { version = "0.2.2", path = "crates/core" }
 claviron-pipeline = { version = "0.2.1" }
 claviron-runtime = { version = "0.2.1" }
 claviron-tasks = { version = "0.2.1" }
