@@ -2,8 +2,8 @@
 
 PHP execution for Claviron, with embedded and FastCGI backends.
 
-This workspace is being extracted from Claviron. Its initial standalone release
-is not published yet.
+Add [claviron-php](https://crates.io/crates/claviron-php) to a Claviron host
+and select the PHP engine your application uses.
 
 | Package | Responsibility |
 | --- | --- |
