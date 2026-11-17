@@ -498,7 +498,7 @@ impl PhpEmbedRuntime {
         crate::functions::config::configure_from_state(state);
 
         claviron_orbit::register_counter(state)?;
-        claviron_orbit::register_cells(state)?;
+        claviron_orbit::register_orbitals(state)?;
         claviron_orbit::register_lock(state)?;
         claviron_orbit::register(state)?;
         #[cfg(any(feature = "apcu-intercept", feature = "opcache-intercept"))]
@@ -647,7 +647,7 @@ impl Component<AppState> for PhpEmbedRuntime {
     type Deps = (
         Arc<claviron_orbit::FleetProvider>,
         Arc<claviron_orbit::CounterProvider>,
-        Arc<claviron_orbit::CellsProvider>,
+        Arc<claviron_orbit::OrbitalsProvider>,
         CacheDependency,
         DatabaseDependency,
         InvocationDependency,
@@ -680,7 +680,7 @@ impl Bootable<AppState, <Self as Component<AppState>>::Deps>
         (
             fleet,
             counter,
-            cells,
+            orbitals,
             cache,
             database,
             invocation,
@@ -738,7 +738,7 @@ impl Bootable<AppState, <Self as Component<AppState>>::Deps>
         crate::functions::orbit::counter::configure(counter);
         #[cfg(feature = "log-pipeline")]
         crate::functions::log::configure(logging);
-        crate::functions::orbit::cell::configure(cells);
+        crate::functions::orbit::atomic::configure(orbitals)?;
         crate::functions::orbit::lock::configure(fleet);
         crate::functions::runtime::mark_prepared();
         // Other providers can contribute programs later in the boot sequence.

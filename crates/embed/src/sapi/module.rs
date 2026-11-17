@@ -50,7 +50,7 @@ pub(crate) fn prepare_module(
         builder =
             builder.class::<crate::functions::mysql::PhpMySqlConnection>();
     }
-    builder = builder.class::<crate::functions::orbit::cell::PhpOrbital>();
+    builder = builder.class::<crate::functions::orbit::atomic::PhpOrbital>();
     #[cfg(feature = "tasks")]
     {
         builder = builder
@@ -81,7 +81,7 @@ unsafe extern "C" fn host_module_startup(
             ext_php_rs::internal::ext_php_rs_startup();
             let result = startup.startup(module_type, module_number);
             if result.is_ok() {
-                crate::functions::orbit::cell::install_handlers();
+                crate::functions::orbit::atomic::install_handlers();
             }
             result
         })

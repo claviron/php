@@ -40,11 +40,15 @@ if (!class_exists(Invocation::class, false)) {
 /**
  * A typed value that lives in the fleet's shared memory and travels by id.
  *
- * `$n = Orbital::int(0); $n++;` updates the same cell from every process
+ * `$n = Orbital::int(0); $n++;` updates the same value from every process
  * that holds a handle; `serialize($n)` carries only the id, and the handle
- * that comes back reads whatever the cell holds then. Arithmetic on an int
- * or float cell and `.=` on a string cell are atomic and return the same
- * handle; comparisons and casts read the current value.
+ * that comes back reads whatever the value is then. `+` and `-` on an int or
+ * float Orbital are atomic and return the same handle; an int wraps on
+ * overflow. Comparisons and casts read the current value.
+ *
+ * Creating an Orbital is a declaration: it takes a slot of the fleet's table
+ * for the life of the fleet and nothing gives it back. Declare the values a
+ * program shares once and pass their ids; never create one per request.
  */
 if (!class_exists(Orbital::class, false)) {
     final class Orbital
@@ -54,23 +58,22 @@ if (!class_exists(Orbital::class, false)) {
         public static function int(int $value = 0): self { throw new \RuntimeException('requires the Claviron runtime'); }
         public static function float(float $value = 0.0): self { throw new \RuntimeException('requires the Claviron runtime'); }
         public static function bool(bool $value = false): self { throw new \RuntimeException('requires the Claviron runtime'); }
-        public static function string(string $value = ''): self { throw new \RuntimeException('requires the Claviron runtime'); }
-        /** Reattach to a cell by the id another handle printed or serialized. */
+        /** Reattach to a value by the id another handle printed or serialized. */
         public static function open(string $id): self { throw new \RuntimeException('requires the Claviron runtime'); }
 
+        /** `<kind>:<slot>:<epoch>`, such as `i64:12:3`; valid until the fleet's table is reset. */
         public function id(): string { throw new \RuntimeException('requires the Claviron runtime'); }
-        public function get(): int|float|bool|string { throw new \RuntimeException('requires the Claviron runtime'); }
-        public function set(int|float|bool|string $value): void { throw new \RuntimeException('requires the Claviron runtime'); }
-        /** Atomic add for int and float cells; returns the value after. */
+        public function get(): int|float|bool { throw new \RuntimeException('requires the Claviron runtime'); }
+        public function set(int|float|bool $value): void { throw new \RuntimeException('requires the Claviron runtime'); }
+        /** Atomic add for an int or float Orbital; returns the value after. */
         public function add(int|float $by): int|float { throw new \RuntimeException('requires the Claviron runtime'); }
-        /** Atomic append for string cells; refused whole when it would not fit. */
-        public function append(string $text): string { throw new \RuntimeException('requires the Claviron runtime'); }
-        /** Give the cell back; every handle to it goes stale. */
-        /** The write count; take it before get() and wait() misses nothing. */
-        public function version(): int { throw new \RuntimeException('requires the Claviron runtime'); }
-        /** Block until written since $since, by any process; the count now. Throws once released. */
-        public function wait(int $since): int { throw new \RuntimeException('requires the Claviron runtime'); }
-        public function release(): void { throw new \RuntimeException('requires the Claviron runtime'); }
+        /**
+         * Block until the value is no longer $current, whichever process writes it, and return
+         * what it is then; at once when it already differs. Many writes while blocked are one
+         * return, of the latest value. Null when this execution was cancelled instead, which
+         * claviron_is_cancelled() then reports.
+         */
+        public function wait(int|float|bool $current): int|float|bool|null { throw new \RuntimeException('requires the Claviron runtime'); }
     }
 }
 
