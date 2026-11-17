@@ -79,11 +79,16 @@ unsafe extern "C" fn host_module_startup(
     match catch_unwind(AssertUnwindSafe(|| {
         MODULE_STARTUP.lock().take().map_or(Ok(()), |startup| {
             ext_php_rs::internal::ext_php_rs_startup();
-            let result = startup.startup(module_type, module_number);
-            if result.is_ok() {
-                crate::functions::orbit::atomic::install_handlers();
-            }
-            result
+            startup
+                .startup(module_type, module_number)
+                .map_err(|err| err.to_string())?;
+            crate::functions::orbit::atomic::install_handlers();
+            // Plain internal classes, declared here rather than through the
+            // module builder, which registers only classes with a native object.
+            #[cfg(feature = "cache")]
+            crate::functions::cache::register_exception_classes()
+                .map_err(|err| format!("cache exception classes: {err}"))?;
+            Ok::<(), String>(())
         })
     })) {
         Ok(Ok(())) => ZEND_RESULT_CODE_SUCCESS,

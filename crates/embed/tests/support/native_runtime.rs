@@ -3,7 +3,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use claviron_php_core::{PhpRunner, PhpRuntime};
-use claviron_php_embed::extension::{PhpEmbedExtension, register_extension};
 use claviron_php_embed::{
     PhpEmbedRuntime, PhpEmbedStateExt, PhpSapiRequest, PhpScriptService,
     RequestPool,
@@ -15,9 +14,12 @@ use http_body_util::BodyExt;
 use tokio_util::sync::CancellationToken;
 
 /// One runtime per integration-test process, with no listener or fleet boot.
+///
+/// `prepare` registers what the fixture needs, such as an extension, before
+/// PHP boots. The fixture answers with `X-Fixture: ok` and the body `ok`.
 pub async fn run_fixture(
     fixture: &Path,
-    extension: Option<Arc<dyn PhpEmbedExtension>>,
+    prepare: impl AsyncFnOnce(&AppState),
 ) {
     let root = tempfile::tempdir().unwrap();
     let ini = root.path().join("php.ini");
@@ -29,9 +31,7 @@ pub async fn run_fixture(
     let script = root.path().join("index.php");
     std::fs::copy(fixture, &script).unwrap();
     let state = AppState::standalone("php-extension-test", root.path());
-    if let Some(extension) = extension {
-        register_extension(&state, extension).unwrap();
-    }
+    prepare(&state).await;
     PhpEmbedRuntime::builder()
         .request_pool(RequestPool::fixed(2))
         .cache_invalidation(false)
@@ -109,7 +109,7 @@ pub async fn run_fixture(
             "{}",
             String::from_utf8_lossy(&body)
         );
-        assert_eq!(parts.headers["x-registration-test"], "ok");
+        assert_eq!(parts.headers["x-fixture"], "ok");
         assert_eq!(body.as_ref(), b"ok");
     }
     cancellation.cancel();

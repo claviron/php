@@ -96,6 +96,33 @@ if (!class_exists(CacheHandle::class, false)) {
     }
 }
 
+if (!class_exists(CacheException::class, false)) {
+    /** Every failure of a claviron_cache_* function; the tag refusals extend it. */
+    class CacheException extends \RuntimeException {}
+}
+
+if (!class_exists(CacheTagsUnsupportedException::class, false)) {
+    /** A tagged call on a store without tags. Its untagged operations keep working. */
+    final class CacheTagsUnsupportedException extends CacheException {}
+}
+
+if (!class_exists(CacheTooManyTagsException::class, false)) {
+    /** More tags than the store keeps on one entry or takes in one invalidation. */
+    final class CacheTooManyTagsException extends CacheException
+    {
+        /** @var int|null How many tags the store counted; the runtime sets it when it throws. */
+        public $count;
+
+        /** @var int|null How many it keeps for this call; a long key can leave room for fewer. */
+        public $max;
+    }
+}
+
+if (!class_exists(CacheTagsEmptyException::class, false)) {
+    /** An invalidation that names no tag. */
+    final class CacheTagsEmptyException extends CacheException {}
+}
+
 if (!class_exists(PostgresConnection::class, false)) {
     /** Opaque named-pool handle; only claviron_postgres_connection() creates one. */
     final class PostgresConnection

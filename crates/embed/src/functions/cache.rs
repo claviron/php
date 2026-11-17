@@ -4,7 +4,15 @@
 //! [`CacheRepository`] once and returns an opaque native handle. The operation
 //! functions accept that handle, so PHP framework integrations can keep their
 //! selected repository without passing a store name on every call.
+//!
+//! Tags are separate functions on the same handle:
+//! `claviron_cache_supports_tags` answers for the resolved store, and
+//! `claviron_cache_put_tagged` and `claviron_cache_invalidate_tags` are refused
+//! by a store without tags rather than reduced to untagged calls. Every cache
+//! failure is a `Claviron\Runtime\CacheException`; the tag refusals are its
+//! subclasses, so PHP tells them apart by class, not by message.
 
+use std::ffi::CString;
 use std::future::Future;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -12,19 +20,30 @@ use std::time::Duration;
 use arc_swap::ArcSwapOption;
 use claviron_cache::{
     ArchivedCacheJson, CacheJson, CacheProvider, CacheRepository, CacheValue,
-    CacheValueRef,
+    CacheValueRef, Error as CacheError,
 };
 use ext_php_rs::args::Arg;
-use ext_php_rs::builders::FunctionBuilder;
+use ext_php_rs::builders::{ClassBuilder, ClassProperty, FunctionBuilder};
 use ext_php_rs::class::RegisteredClass;
 use ext_php_rs::convert::IntoZval;
 use ext_php_rs::exception::PhpException;
-use ext_php_rs::flags::{ClassFlags, DataType};
+use ext_php_rs::flags::{ClassFlags, DataType, PropertyFlags};
 use ext_php_rs::php_class;
 use ext_php_rs::types::{ArrayKey, ZendClassObject, ZendHashTable, Zval};
-use ext_php_rs::zend::ExecuteData;
+use ext_php_rs::zend::{ClassEntry, ExecuteData, ExecutorGlobals, ce};
 use tokio::runtime::Handle;
-use tracing::debug;
+use tracing::{debug, warn};
+
+/// Every cache function failure; the tag refusals below extend it.
+const CACHE_EXCEPTION: &str = "Claviron\\Runtime\\CacheException";
+/// A tagged call on a store whose `claviron_cache_supports_tags` is false.
+const TAGS_UNSUPPORTED_EXCEPTION: &str =
+    "Claviron\\Runtime\\CacheTagsUnsupportedException";
+/// More tags than the store keeps; carries `count` and `max`.
+const TOO_MANY_TAGS_EXCEPTION: &str =
+    "Claviron\\Runtime\\CacheTooManyTagsException";
+/// An invalidation that names no tag.
+const TAGS_EMPTY_EXCEPTION: &str = "Claviron\\Runtime\\CacheTagsEmptyException";
 
 use crate::extension::FunctionEntries;
 
@@ -63,16 +82,16 @@ impl PhpCacheBridge {
     fn block_on<F, T>(
         &self,
         future: F,
-    ) -> Result<T, String>
+    ) -> claviron_cache::Result<T>
     where
         F: Future<Output = claviron_cache::Result<T>>,
     {
         if Handle::try_current().is_ok() {
-            return Err(
+            return Err(CacheError::Rejected(
                 "synchronous PHP cache access must run outside a Tokio runtime thread".to_string()
-            );
+            ));
         }
-        self.runtime.block_on(future).map_err(|error| error.to_string())
+        self.runtime.block_on(future)
     }
 }
 
@@ -163,14 +182,127 @@ pub(crate) fn append_function_entries(
             .returns(DataType::Bool, false, false)
             .build()
             .map_err(|error| format!("claviron_cache_clear: {error}"))?,
+        FunctionBuilder::new(
+            "claviron_cache_supports_tags",
+            supports_tags_handler,
+        )
+        .arg(Arg::new("cache", DataType::object(PhpCacheHandle::CLASS_NAME)))
+        .returns(DataType::Bool, false, false)
+        .build()
+        .map_err(|error| format!("claviron_cache_supports_tags: {error}"))?,
+        FunctionBuilder::new("claviron_cache_put_tagged", put_tagged_handler)
+            .arg(Arg::new(
+                "cache",
+                DataType::object(PhpCacheHandle::CLASS_NAME),
+            ))
+            .arg(Arg::new("key", DataType::String))
+            .arg(Arg::new("value", DataType::Mixed))
+            .arg(Arg::new("tags", DataType::Array))
+            .not_required()
+            .arg(
+                Arg::new("seconds", DataType::Long)
+                    .allow_null()
+                    .default("null"),
+            )
+            .returns(DataType::Bool, false, false)
+            .build()
+            .map_err(|error| format!("claviron_cache_put_tagged: {error}"))?,
+        FunctionBuilder::new(
+            "claviron_cache_invalidate_tags",
+            invalidate_tags_handler,
+        )
+        .arg(Arg::new("cache", DataType::object(PhpCacheHandle::CLASS_NAME)))
+        .arg(Arg::new("tags", DataType::Array))
+        .returns(DataType::Bool, false, false)
+        .build()
+        .map_err(|error| format!("claviron_cache_invalidate_tags: {error}"))?,
     ];
 
     entries.extend(functions);
     debug!(
         "prepared PHP functions for cache: claviron_cache_store/claviron_cache_get/\
-         claviron_cache_put/claviron_cache_forget/claviron_cache_clear"
+         claviron_cache_put/claviron_cache_forget/claviron_cache_clear/\
+         claviron_cache_supports_tags/claviron_cache_put_tagged/\
+         claviron_cache_invalidate_tags"
     );
     Ok(())
+}
+
+/// Declare the cache exception classes. Runs in the host module's MINIT,
+/// where internal classes are registered; `RuntimeException` (SPL) is
+/// already there.
+///
+/// These are plain subclasses without a native object, so PHP's own
+/// exception constructor records file, line and trace as for any exception.
+pub(crate) fn register_exception_classes() -> Result<(), String> {
+    if find_class("RuntimeException").is_none() {
+        return Err("RuntimeException is not registered".to_string());
+    }
+    let register = |builder: ClassBuilder, name: &str| {
+        builder
+            .registration(|_, _| {})
+            .register()
+            .map_err(|error| format!("{name}: {error}"))
+    };
+    register(
+        ClassBuilder::new(CACHE_EXCEPTION)
+            .extends((runtime_exception, "\\RuntimeException")),
+        CACHE_EXCEPTION,
+    )?;
+    let subclass = |name: &str| {
+        ClassBuilder::new(name)
+            .extends((cache_exception, "\\Claviron\\Runtime\\CacheException"))
+            .flags(ClassFlags::Final)
+    };
+    register(subclass(TAGS_UNSUPPORTED_EXCEPTION), TAGS_UNSUPPORTED_EXCEPTION)?;
+    // Set on every throw; an instance PHP constructs itself leaves them null.
+    let public = |name: &str| ClassProperty {
+        name: name.to_owned(),
+        flags: PropertyFlags::Public,
+        default: None,
+        docs: &[],
+        ty: None,
+        nullable: true,
+        readonly: false,
+        default_stub: None,
+    };
+    register(
+        subclass(TOO_MANY_TAGS_EXCEPTION)
+            .property(public("count"))
+            .property(public("max")),
+        TOO_MANY_TAGS_EXCEPTION,
+    )?;
+    register(subclass(TAGS_EMPTY_EXCEPTION), TAGS_EMPTY_EXCEPTION)?;
+    Ok(())
+}
+
+fn runtime_exception() -> &'static ClassEntry {
+    find_class("RuntimeException")
+        .expect("RuntimeException is checked before registration")
+}
+
+fn cache_exception() -> &'static ClassEntry {
+    find_class(CACHE_EXCEPTION)
+        .expect("CacheException is registered before its subclasses")
+}
+
+/// An internal class from the class table, without autoloading. Valid in
+/// MINIT, before the executor's own table exists, and on request threads.
+fn find_class(name: &str) -> Option<&'static ClassEntry> {
+    use ext_php_rs::ffi::zend_hash_str_find_ptr_lc;
+
+    // SAFETY: the compiler globals and their class table are owned by PHP
+    // for the life of the thread; the lookup lowercases a copy of `name`.
+    unsafe {
+        let globals = ext_php_rs::ffi::ext_php_rs_compiler_globals();
+        let table = globals.as_ref()?.class_table;
+        if table.is_null() {
+            return None;
+        }
+        zend_hash_str_find_ptr_lc(table, name.as_ptr().cast(), name.len())
+            .cast::<ClassEntry>()
+            .as_ref()
+    }
 }
 
 pub(crate) extern "C" fn store_handler(
@@ -188,9 +320,8 @@ pub(crate) extern "C" fn store_handler(
             retval.set_null();
             return;
         };
-        let Ok(repository) = bridge
-            .repository(name.as_deref())
-            .inspect_err(|error| throw_cache_exception(error))
+        let Ok(repository) =
+            bridge.repository(name.as_deref()).map_err(throw_cache_error)
         else {
             retval.set_null();
             return;
@@ -229,7 +360,7 @@ pub(crate) extern "C" fn get_handler(
                 Err(error) => throw_cache_exception(error),
             },
             Ok(None) => retval.set_null(),
-            Err(error) => throw_cache_exception(error),
+            Err(error) => throw_cache_error(error),
         }
     }));
 }
@@ -307,24 +438,329 @@ pub(crate) extern "C" fn clear_handler(
     }));
 }
 
+pub(crate) extern "C" fn supports_tags_handler(
+    ex: &mut ExecuteData,
+    retval: &mut Zval,
+) {
+    ext_php_rs::zend::run_handler(std::panic::AssertUnwindSafe(|| {
+        retval.set_bool(false);
+        let mut cache =
+            Arg::new("cache", DataType::object(PhpCacheHandle::CLASS_NAME));
+        let parsed = ex
+            .parser()
+            .arg(&mut cache)
+            .parse()
+            .map_err(|error| Failure::Bridge(error.to_string()))
+            .and_then(|()| handle_arg(&mut cache, "supports_tags"));
+        match parsed {
+            Ok(repository) => retval.set_bool(repository.supports_tags()),
+            Err(failure) => failure.throw(),
+        }
+    }));
+}
+
+pub(crate) extern "C" fn put_tagged_handler(
+    ex: &mut ExecuteData,
+    retval: &mut Zval,
+) {
+    ext_php_rs::zend::run_handler(std::panic::AssertUnwindSafe(|| {
+        retval.set_bool(false);
+        match put_tagged(ex) {
+            Ok(()) => retval.set_bool(true),
+            Err(failure) => failure.throw(),
+        }
+    }));
+}
+
+pub(crate) extern "C" fn invalidate_tags_handler(
+    ex: &mut ExecuteData,
+    retval: &mut Zval,
+) {
+    ext_php_rs::zend::run_handler(std::panic::AssertUnwindSafe(|| {
+        retval.set_bool(false);
+        match invalidate_tags(ex) {
+            Ok(()) => retval.set_bool(true),
+            Err(failure) => failure.throw(),
+        }
+    }));
+}
+
+/// The arguments borrow the caller's key and tag strings for the call; only
+/// the value is converted, as `claviron_cache_put` converts it.
+fn put_tagged(ex: &mut ExecuteData) -> Result<(), Failure> {
+    const FUNCTION: &str = "put_tagged";
+    let mut cache =
+        Arg::new("cache", DataType::object(PhpCacheHandle::CLASS_NAME));
+    let mut key = Arg::new("key", DataType::String);
+    let mut value = Arg::new("value", DataType::Mixed);
+    let mut tags = Arg::new("tags", DataType::Array);
+    let mut seconds = Arg::new("seconds", DataType::Long).allow_null();
+    ex.parser()
+        .arg(&mut cache)
+        .arg(&mut key)
+        .arg(&mut value)
+        .arg(&mut tags)
+        .not_required()
+        .arg(&mut seconds)
+        .parse()
+        .map_err(|error| Failure::Bridge(error.to_string()))?;
+
+    let repository = handle_arg(&mut cache, FUNCTION)?;
+    let key = key_arg(&mut key, FUNCTION)?;
+    let value =
+        value.zval().and_then(|value| cache_value_from_zval(value)).ok_or_else(
+            || {
+                Failure::Bridge(
+                    "unsupported cache value; expected null, bool, int, float, string, bytes, or array"
+                        .to_string(),
+                )
+            },
+        )?;
+    let tags = tags_arg(&mut tags, FUNCTION, 4)?;
+    let seconds = optional_i64(seconds).ok_or_else(|| {
+        Failure::Bridge("cache TTL must be an integer".to_string())
+    })?;
+    let bridge = bridge().map_err(Failure::Bridge)?;
+
+    match seconds {
+        // As claviron_cache_put: a non-positive TTL forgets the key. The
+        // store must still support tags, so the refusal stays at this call.
+        Some(seconds) if seconds <= 0 => {
+            if !repository.supports_tags() {
+                return Err(Failure::Cache(CacheError::TagsUnsupported {
+                    store: repository.store_name().into(),
+                    driver: repository.driver_name().into(),
+                }));
+            }
+            bridge.block_on(repository.forget(key))
+        }
+        seconds => bridge.block_on(repository.put_value_tagged(
+            key,
+            value,
+            seconds.map(|seconds| Duration::from_secs(seconds as u64)),
+            &tags,
+        )),
+    }
+    .map_err(Failure::Cache)
+}
+
+fn invalidate_tags(ex: &mut ExecuteData) -> Result<(), Failure> {
+    const FUNCTION: &str = "invalidate_tags";
+    let mut cache =
+        Arg::new("cache", DataType::object(PhpCacheHandle::CLASS_NAME));
+    let mut tags = Arg::new("tags", DataType::Array);
+    ex.parser()
+        .arg(&mut cache)
+        .arg(&mut tags)
+        .parse()
+        .map_err(|error| Failure::Bridge(error.to_string()))?;
+
+    let repository = handle_arg(&mut cache, FUNCTION)?;
+    let tags = tags_arg(&mut tags, FUNCTION, 2)?;
+    let bridge = bridge().map_err(Failure::Bridge)?;
+    bridge.block_on(repository.invalidate_tags(&tags)).map_err(Failure::Cache)
+}
+
+/// Why a tagged call failed, thrown as the PHP class that names it.
+enum Failure {
+    /// An argument of the wrong type: `TypeError`.
+    Type(String),
+    /// A string argument that is not UTF-8: `ValueError`.
+    Value(String),
+    /// The bridge or a conversion failed: `CacheException`.
+    Bridge(String),
+    /// The store's own answer, typed by [`throw_cache_error`].
+    Cache(CacheError),
+}
+
+impl Failure {
+    fn throw(self) {
+        match self {
+            Self::Type(message) => {
+                PhpException::new(message, 0, ce::type_error()).throw();
+            }
+            Self::Value(message) => {
+                PhpException::new(message, 0, ce::value_error()).throw();
+            }
+            Self::Bridge(message) => throw_cache_exception(message),
+            Self::Cache(error) => throw_cache_error(error),
+        }
+    }
+}
+
+fn handle_arg(
+    arg: &mut Arg<'_>,
+    function: &str,
+) -> Result<Arc<CacheRepository>, Failure> {
+    repository_from_arg(arg).ok_or_else(|| {
+        Failure::Type(format!(
+            "claviron_cache_{function}(): Argument #1 ($cache) must be of type {}, {} given",
+            PhpCacheHandle::CLASS_NAME,
+            php_type(arg.zval().map(|value| &**value)),
+        ))
+    })
+}
+
+fn key_arg<'a>(
+    arg: &'a mut Arg<'_>,
+    function: &str,
+) -> Result<&'a str, Failure> {
+    let value = arg.zval().map(|value| &**value);
+    let Some(key) = value.and_then(Zval::zend_str) else {
+        return Err(Failure::Type(format!(
+            "claviron_cache_{function}(): Argument #2 ($key) must be of type string, {} given",
+            php_type(value),
+        )));
+    };
+    key.as_str().map_err(|_| {
+        Failure::Value(format!(
+            "claviron_cache_{function}(): Argument #2 ($key) must be valid UTF-8"
+        ))
+    })
+}
+
+/// The tag strings, borrowed from the caller's array. Keys are ignored;
+/// every value must be a UTF-8 string, and nothing is coerced.
+fn tags_arg<'a>(
+    arg: &'a mut Arg<'_>,
+    function: &str,
+    position: u8,
+) -> Result<Vec<&'a str>, Failure> {
+    let value = arg.zval().map(|value| &**value);
+    let Some(array) = value.and_then(Zval::array) else {
+        return Err(Failure::Type(format!(
+            "claviron_cache_{function}(): Argument #{position} ($tags) must be of type array, {} given",
+            php_type(value),
+        )));
+    };
+    let mut tags = Vec::with_capacity(array.len());
+    for (key, tag) in array {
+        let Some(text) = tag.zend_str() else {
+            return Err(Failure::Type(format!(
+                "claviron_cache_{function}(): Argument #{position} ($tags) must contain only strings, {} given at key {key}",
+                php_type(Some(tag)),
+            )));
+        };
+        tags.push(text.as_str().map_err(|_| {
+            Failure::Value(format!(
+                "claviron_cache_{function}(): Argument #{position} ($tags) must contain only valid UTF-8 strings, invalid at key {key}"
+            ))
+        })?);
+    }
+    Ok(tags)
+}
+
+fn php_type(value: Option<&Zval>) -> &'static str {
+    let Some(value) = value.map(Zval::dereference) else {
+        return "nothing";
+    };
+    if value.is_null() {
+        "null"
+    } else if value.is_bool() {
+        "bool"
+    } else if value.is_long() {
+        "int"
+    } else if value.is_double() {
+        "float"
+    } else if value.is_string() {
+        "string"
+    } else if value.is_array() {
+        "array"
+    } else if value.is_object() {
+        "object"
+    } else {
+        "another type"
+    }
+}
+
 fn set_bool_result(
     retval: &mut Zval,
-    result: Result<(), String>,
+    result: claviron_cache::Result<()>,
 ) {
     match result {
         Ok(()) => retval.set_bool(true),
         Err(error) => {
             retval.set_bool(false);
-            throw_cache_exception(error);
+            throw_cache_error(error);
         }
     }
 }
 
 fn throw_cache_exception(error: impl std::fmt::Display) {
-    PhpException::from_message(format!(
-        "Claviron cache operation failed: {error}"
-    ))
-    .throw();
+    throw_cache_class(
+        CACHE_EXCEPTION,
+        &format!("Claviron cache operation failed: {error}"),
+        &[],
+    );
+}
+
+/// Throw the class that names a store's refusal, or `CacheException`.
+fn throw_cache_error(error: CacheError) {
+    let message = format!("Claviron cache operation failed: {error}");
+    match error {
+        CacheError::TagsUnsupported { .. } => {
+            throw_cache_class(TAGS_UNSUPPORTED_EXCEPTION, &message, &[]);
+        }
+        CacheError::TooManyTags { count, max } => {
+            match (i64::try_from(count), i64::try_from(max)) {
+                (Ok(count), Ok(max)) => throw_cache_class(
+                    TOO_MANY_TAGS_EXCEPTION,
+                    &message,
+                    &[("count", count), ("max", max)],
+                ),
+                // Not representable as a PHP int: the numbers stay in the
+                // message rather than being clamped.
+                _ => throw_cache_class(CACHE_EXCEPTION, &message, &[]),
+            }
+        }
+        CacheError::TagsEmpty => {
+            throw_cache_class(TAGS_EMPTY_EXCEPTION, &message, &[]);
+        }
+        _ => throw_cache_class(CACHE_EXCEPTION, &message, &[]),
+    }
+}
+
+/// Throw `class` through PHP's own exception construction, so file, line
+/// and trace are recorded, then set its public `properties`.
+fn throw_cache_class(
+    class: &str,
+    message: &str,
+    properties: &[(&str, i64)],
+) {
+    if ExecutorGlobals::has_exception() {
+        return;
+    }
+    let Some(entry) = find_class(class) else {
+        PhpException::from_message(format!(
+            "{class} is not registered; {message}"
+        ))
+        .throw();
+        return;
+    };
+    // Interior NULs are escaped, so the conversion cannot fail.
+    let Ok(text) = CString::new(message.replace('\0', "\\0")) else {
+        PhpException::from_message(message.replace('\0', "\\0")).throw();
+        return;
+    };
+    // SAFETY: `entry` is a registered, concrete exception class and `text`
+    // is NUL-terminated for the call. The returned object is the pending
+    // exception, owned by the executor.
+    let object = unsafe {
+        ext_php_rs::ffi::zend_throw_exception(
+            std::ptr::from_ref(entry).cast_mut(),
+            text.as_ptr(),
+            0,
+        )
+        .as_mut()
+    };
+    let Some(object) = object else {
+        return;
+    };
+    for &(name, value) in properties {
+        if let Err(error) = object.set_property(name, value) {
+            warn!(class, property = name, %error, "cache exception property not set");
+        }
+    }
 }
 
 fn parse_handle_key(

@@ -13,6 +13,13 @@ if (!class_exists(\Claviron\Runtime\Event::class, false)) {
     throw new RuntimeException('Event fallback is missing.');
 }
 
+// Code that catches the native cache exceptions must load without the runtime.
+foreach (['CacheTagsUnsupportedException', 'CacheTooManyTagsException', 'CacheTagsEmptyException'] as $class) {
+    if (!is_subclass_of('Claviron\\Runtime\\' . $class, \Claviron\Runtime\CacheException::class)) {
+        throw new RuntimeException($class . ' fallback must extend CacheException.');
+    }
+}
+
 if (claviron_runtime_available() !== false) {
     throw new RuntimeException('The fallback must not claim an embedded runtime.');
 }

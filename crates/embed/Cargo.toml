@@ -130,3 +130,7 @@ tempfile = "3"
 
 [[test]]
 name = "native_registration"
+
+[[test]]
+name = "native_cache_tags"
+required-features = ["cache"]

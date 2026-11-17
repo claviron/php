@@ -310,6 +310,58 @@ if (!function_exists('claviron_cache_clear')) {
     }
 }
 
+if (!function_exists('claviron_cache_supports_tags')) {
+    /**
+     * Whether the store behind this handle accepts claviron_cache_put_tagged() and
+     * claviron_cache_invalidate_tags(). It answers for the resolved store, not its driver,
+     * and does not change for the handle's life.
+     */
+    function claviron_cache_supports_tags(\Claviron\Runtime\CacheHandle $cache): bool
+    {
+        throw new \RuntimeException(__FUNCTION__ . '() requires the Claviron embed runtime and its native implementation.');
+    }
+}
+
+if (!function_exists('claviron_cache_put_tagged')) {
+    /**
+     * Store $value under $key so that invalidating any of $tags makes it a miss.
+     *
+     * Every element of $tags must be a string; keys are ignored and nothing is coerced. An
+     * empty list is an untagged put. $seconds is as in claviron_cache_put(): null stores
+     * without expiry, zero or less forgets the key. Reads are claviron_cache_get().
+     *
+     * @param list<string> $tags
+     * @throws \Claviron\Runtime\CacheTagsUnsupportedException the store has no tags; nothing is written
+     * @throws \Claviron\Runtime\CacheTooManyTagsException more tags than the store keeps; nothing is written
+     * @throws \Claviron\Runtime\CacheException any other cache failure
+     * @throws \TypeError a tag is not a string
+     * @throws \ValueError a tag is not valid UTF-8
+     */
+    function claviron_cache_put_tagged(\Claviron\Runtime\CacheHandle $cache, string $key, mixed $value, array $tags, ?int $seconds = null): bool
+    {
+        throw new \RuntimeException(__FUNCTION__ . '() requires the Claviron embed runtime and its native implementation.');
+    }
+}
+
+if (!function_exists('claviron_cache_invalidate_tags')) {
+    /**
+     * Make every entry carrying any of $tags, written before this call, a miss in every
+     * process that shares the store.
+     *
+     * @param list<string> $tags
+     * @throws \Claviron\Runtime\CacheTagsUnsupportedException the store has no tags
+     * @throws \Claviron\Runtime\CacheTagsEmptyException $tags is empty
+     * @throws \Claviron\Runtime\CacheTooManyTagsException more tags than the store takes at once
+     * @throws \Claviron\Runtime\CacheException any other cache failure
+     * @throws \TypeError a tag is not a string
+     * @throws \ValueError a tag is not valid UTF-8
+     */
+    function claviron_cache_invalidate_tags(\Claviron\Runtime\CacheHandle $cache, array $tags): bool
+    {
+        throw new \RuntimeException(__FUNCTION__ . '() requires the Claviron embed runtime and its native implementation.');
+    }
+}
+
 
 if (!function_exists('claviron_mysql_connection')) {
     function claviron_mysql_connection(?string $name = null): \Claviron\Runtime\MySqlConnection

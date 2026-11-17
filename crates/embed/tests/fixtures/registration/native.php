@@ -47,5 +47,5 @@ if (class_exists('Claviron\Runtime\Invocation', false)) {
     require_same(true, property_exists('Claviron\Runtime\Invocation', 'submitted_at'));
     require_same(false, property_exists('Claviron\Runtime\Invocation', 'submittedAt'));
 }
-header('X-Registration-Test: ok');
+header('X-Fixture: ok');
 echo 'ok';

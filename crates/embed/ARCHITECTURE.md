@@ -64,6 +64,16 @@ retain their lease until completion or work cleanup; cleanup rolls back
 unfinished transactions and releases connection-local state. SQLx's own
 backend errors and configured budgets remain authoritative.
 
+Cache functions operate on a `CacheHandle` resolved once per store. Tags are
+separate functions on that handle, answered by the resolved store:
+`claviron_cache_supports_tags`, `claviron_cache_put_tagged` and
+`claviron_cache_invalidate_tags`. A cache failure is a
+`Claviron\Runtime\CacheException`; the store's tag refusals reach PHP as its
+subclasses (`CacheTagsUnsupportedException`, `CacheTooManyTagsException` with
+`count` and `max`, `CacheTagsEmptyException`), so a framework adapter tells
+them apart by class. Tags are borrowed PHP strings; a non-string tag is a
+`TypeError`, never coerced.
+
 Cache, auth, logging, event and database functions are selected by features and
 prepared host bindings. PHP declarations in the Composer package do not install
 a native bridge or emulate a missing service.
