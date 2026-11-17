@@ -29,7 +29,7 @@ postgres = ["claviron-php-embed?/postgres"]
 
 [dependencies]
 claviron-php-core = { workspace = true, optional = true }
-claviron-php-embed = { version = "0.2.3", path = "crates/embed", optional = true }
+claviron-php-embed = { version = "0.2.4", path = "crates/embed", optional = true }
 claviron-php-fcgi = { version = "0.2.3", path = "crates/fcgi", optional = true }
 claviron-pipeline = { workspace = true, optional = true }
 claviron-edge = { version = "0.2.6", optional = true }
@@ -45,7 +45,7 @@ members = ["crates/core", "crates/embed", "crates/fcgi"]
 resolver = "3"
 
 [workspace.package]
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/claviron/php"
