@@ -30,7 +30,7 @@ if (claviron_application_name() !== null) {
 }
 
 $names = [];
-$native = dirname(__DIR__, 3) . '/crates/php-embed/src';
+$native = dirname(__DIR__, 2) . '/crates/embed/src';
 $sources = [
     new SplFileInfo($native . '/functions.rs'),
     ...iterator_to_array(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($native . '/functions'))),
