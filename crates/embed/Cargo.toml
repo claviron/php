@@ -6,7 +6,6 @@ edition.workspace= true
 description = "Managed in-process PHP execution, application hosting, and native extensions for Claviron"
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 authors.workspace = true
 include = [
     "/src/**/*.rs",

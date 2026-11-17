@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 authors.workspace = true
 publish.workspace = true
 include.workspace = true
@@ -33,7 +32,7 @@ claviron-php-core = { workspace = true, optional = true }
 claviron-php-embed = { version = "0.2.3", path = "crates/embed", optional = true }
 claviron-php-fcgi = { version = "0.2.3", path = "crates/fcgi", optional = true }
 claviron-pipeline = { workspace = true, optional = true }
-claviron-edge = { version = "0.2.1", optional = true }
+claviron-edge = { version = "0.2.6", optional = true }
 claviron-http = { workspace = true, optional = true }
 claviron-runtime = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
@@ -50,7 +49,6 @@ version = "0.2.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/claviron/php"
-homepage = "https://github.com/claviron/php"
 authors = ["ilker Arabaci <iadev09@claviron.dev>"]
 publish = true
 include = ["/src/**/*.rs", "/build.rs", "/tests/**", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
@@ -59,18 +57,18 @@ include = ["/src/**/*.rs", "/build.rs", "/tests/**", "/README.md", "/LICENSE-MIT
 arc-swap = "1.9"
 async-trait = "0.1"
 bytes = "1.11"
-claviron-app = { version = "0.2.1" }
-claviron-auth = { version = "0.2.1" }
-claviron-cache = { version = "0.2.1" }
-claviron-db = { version = "0.2.1", default-features = false }
-claviron-helpers = { version = "0.2.1" }
-claviron-http = { version = "0.2.3" }
-claviron-logging = { version = "0.2.1" }
-claviron-orbit = { version = "0.2.1" }
+claviron-app = { version = "0.2.6" }
+claviron-auth = { version = "0.2.6" }
+claviron-cache = { version = "0.2.6" }
+claviron-db = { version = "0.2.6", default-features = false }
+claviron-helpers = { version = "0.2.6" }
+claviron-http = { version = "0.2.6" }
+claviron-logging = { version = "0.2.6" }
+claviron-orbit = { version = "0.2.7" }
 claviron-php-core = { version = "0.2.3", path = "crates/core" }
-claviron-pipeline = { version = "0.2.3" }
-claviron-runtime = { version = "0.2.1" }
-claviron-tasks = { version = "0.2.1" }
+claviron-pipeline = { version = "0.2.6" }
+claviron-runtime = { version = "0.2.7" }
+claviron-tasks = { version = "0.2.6" }
 congif = "0.0.1"
 ext-php-rs = { version = "0.16", default-features = false }
 fastcgi-client = "0.12"
