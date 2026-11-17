@@ -23,7 +23,9 @@ pub fn register(
     #[cfg(feature = "embed")]
     embed::register(state)?;
     #[cfg(feature = "edge")]
-    if let Some(hosts) = state.registry_ref().resolve::<claviron_edge::HostAppRegistry>() {
+    if let Some(hosts) =
+        state.registry_ref().resolve::<claviron_edge::HostAppRegistry>()
+    {
         backend::register(hosts.site())?;
     }
     Ok(())
