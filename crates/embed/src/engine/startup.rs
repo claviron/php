@@ -6,9 +6,23 @@ use std::sync::Mutex;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 /// One process's PHP INI locations; not per document or per request settings.
+/// Either one left unset is not decided here: PHP then takes `PHPRC` or
+/// `PHP_INI_SCAN_DIR` from the process environment, or its compiled-in path.
 pub struct PhpIni {
+    /// `PHPRC`: the php.ini file, or the directory holding it.
     pub path: Option<PathBuf>,
+    /// `PHP_INI_SCAN_DIR`. Empty declares that PHP scans no directory, PHP's
+    /// own meaning of an empty value.
     pub scan_dir: Option<PathBuf>,
+}
+
+impl PhpIni {
+    /// The locations PHP is told to read, which therefore have to exist.
+    fn located(&self) -> impl Iterator<Item = &PathBuf> {
+        self.path.iter().chain(
+            self.scan_dir.iter().filter(|dir| !dir.as_os_str().is_empty()),
+        )
+    }
 }
 
 #[derive(Default)]
@@ -40,15 +54,16 @@ pub(crate) fn declare(ini: PhpIni) -> Result<(), String> {
         }
         None => {}
     }
-    for path in [&ini.path, &ini.scan_dir].into_iter().flatten() {
-        if path.as_os_str().is_empty()
-            || path.as_os_str().as_encoded_bytes().contains(&0)
-        {
-            return Err(
-                "PHP INI locations must be nonempty paths without NUL bytes"
-                    .into(),
-            );
-        }
+    if ini.path.as_ref().is_some_and(|path| path.as_os_str().is_empty())
+        || [&ini.path, &ini.scan_dir]
+            .into_iter()
+            .flatten()
+            .any(|path| path.as_os_str().as_encoded_bytes().contains(&0))
+    {
+        return Err(
+            "PHP INI locations must be paths without NUL bytes, and the INI path nonempty"
+                .into(),
+        );
     }
     for (name, path) in
         [("PHPRC", &ini.path), ("PHP_INI_SCAN_DIR", &ini.scan_dir)]
@@ -67,7 +82,7 @@ pub(crate) fn start() -> Result<(), String> {
     let mut declaration =
         DECLARATION.lock().map_err(|error| error.to_string())?;
     if let Some(ini) = &declaration.ini {
-        for path in [&ini.path, &ini.scan_dir].into_iter().flatten() {
+        for path in ini.located() {
             if !path.exists() {
                 return Err(format!(
                     "PHP INI path does not exist: {}",

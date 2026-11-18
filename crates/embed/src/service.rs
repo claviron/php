@@ -129,7 +129,10 @@ impl PhpEmbedRuntimeBuilder {
         self
     }
 
-    /// Process-wide directory of additional PHP INI files.
+    /// Process-wide directory of additional PHP INI files. An empty path
+    /// declares that PHP scans none; left undeclared, PHP takes
+    /// `PHP_INI_SCAN_DIR` from the process environment, or its compiled-in
+    /// directory.
     pub fn ini_scan_dir(
         mut self,
         path: impl Into<PathBuf>,
@@ -431,18 +434,21 @@ impl PhpEmbedRuntime {
                 ));
             }
         }
-        for (name, path) in [
-            ("ini_path", &self.options.ini_path),
-            ("ini_scan_dir", &self.options.ini_scan_dir),
-        ] {
-            if let Some(path) = path
-                && (path.as_os_str().is_empty()
-                    || path.as_os_str().as_encoded_bytes().contains(&0))
-            {
-                return Err(registry::Error::msg(format!(
-                    "PHP {name} must be a nonempty path without NUL bytes"
-                )));
-            }
+        if let Some(path) = &self.options.ini_path
+            && (path.as_os_str().is_empty()
+                || path.as_os_str().as_encoded_bytes().contains(&0))
+        {
+            return Err(registry::Error::msg(
+                "PHP ini_path must be a nonempty path without NUL bytes",
+            ));
+        }
+        // Empty is PHP's own "scan no directory".
+        if let Some(path) = &self.options.ini_scan_dir
+            && path.as_os_str().as_encoded_bytes().contains(&0)
+        {
+            return Err(registry::Error::msg(
+                "PHP ini_scan_dir must be a path without NUL bytes",
+            ));
         }
         crate::warmup::validate(&self.options.warmup)
             .map_err(registry::Error::msg)?;
