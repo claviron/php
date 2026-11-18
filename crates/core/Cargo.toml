@@ -21,7 +21,8 @@ php_fcgi = []
 # ── Internal workspace crates ───────────────────────────────────────────
 claviron-app.workspace = true
 claviron-helpers.workspace = true
-claviron-http.workspace = true
+# A connection's TLS facts, for the server variables every runner maps alike.
+claviron-http = { workspace = true, features = ["server"] }
 claviron-runtime.workspace = true
 
 # ── Serialization & parsing ─────────────────────────────────────────────
@@ -34,5 +35,8 @@ http.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+# ── Internal workspace crates ───────────────────────────────────────────
+claviron-types.workspace = true
+
 # ── Serialization & parsing ─────────────────────────────────────────────
 serde_yaml.workspace = true

@@ -69,6 +69,7 @@ claviron-php-core = { version = "0.2.3", path = "crates/core" }
 claviron-pipeline = { version = "0.2.6" }
 claviron-runtime = { version = "0.2.7" }
 claviron-tasks = { version = "0.2.6" }
+claviron-types = { version = "0.2.6" }
 congif = "0.0.1"
 ext-php-rs = { version = "0.16", default-features = false }
 fastcgi-client = "0.12"

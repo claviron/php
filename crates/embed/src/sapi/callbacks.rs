@@ -861,28 +861,14 @@ fn register_program_variables(
     }
 }
 
+/// The connection's TLS variables, through the mapping application mode and
+/// FastCGI use as well.
 fn register_tls_vars(
     tls: Option<&TlsInfo>,
     vars: *mut Zval,
 ) {
-    let Some(tls) = tls else {
-        return;
-    };
-
-    if let Some(protocol) = tls.ssl_protocol() {
-        unsafe { register_variable(c"SSL_PROTOCOL", protocol, vars) };
-    }
-    if let Some(cipher) = tls.ssl_cipher() {
-        unsafe { register_variable(c"SSL_CIPHER", cipher, vars) };
-    }
-    unsafe {
-        register_variable(c"SSL_CLIENT_VERIFY", tls.ssl_client_verify(), vars)
-    };
-    if let Some(cert) = tls.client_cert.as_ref() {
-        unsafe {
-            register_variable(c"SSL_CLIENT_S_DN", &*cert.subject_dn, vars);
-            register_variable(c"SSL_CLIENT_I_DN", &*cert.issuer_dn, vars);
-        }
+    for (variable, value) in claviron_php_core::tls_variables(tls) {
+        unsafe { register_variable(variable.c_name(), value.as_str(), vars) };
     }
 }
 

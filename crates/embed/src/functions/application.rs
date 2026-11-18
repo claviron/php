@@ -372,6 +372,12 @@ fn request_value(request: &Request<Bytes>) -> Result<Zval, String> {
             server.insert("REMOTE_PORT", conn.remote.port().to_string())?;
             server.insert("SERVER_ADDR", conn.local_ip.to_string())?;
             server.insert("SERVER_PORT", conn.local_port.to_string())?;
+            // The same TLS variables, under the same rules, as script mode.
+            for (variable, value) in
+                claviron_php_core::tls_variables(conn.tls())
+            {
+                server.insert(variable.name(), value.as_str())?;
+            }
         }
         if let Some(scheme) =
             claviron_http::ext::request_scheme(request.extensions())

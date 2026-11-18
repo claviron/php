@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -6,7 +7,7 @@ use bytes::{Bytes, BytesMut};
 use claviron_http::ext::{ConnCtx, HostName, RealIpExt, TlsInfo};
 use claviron_http::policy::BodyNeed;
 use claviron_http::{RouteBody, RouteResponse, ServiceResult, empty_body};
-use claviron_php_core::PhpRuntime;
+use claviron_php_core::{PhpRuntime, TlsValue};
 use claviron_runtime::RunMode;
 use fastcgi_client::Params;
 use futures_util::StreamExt;
@@ -381,28 +382,20 @@ fn build_params(
     params
 }
 
+/// The connection's TLS variables, through the mapping the embedded engine
+/// uses. The parameters outlive the connection, so only certificate text is
+/// copied; static names stay borrowed.
 fn add_tls_params(
     mut params: Params<'static>,
     tls: Option<&TlsInfo>,
 ) -> Params<'static> {
-    let Some(tls) = tls else {
-        return params;
-    };
-
-    if let Some(protocol) = tls.ssl_protocol() {
-        params = params.custom("SSL_PROTOCOL", protocol);
+    for (variable, value) in claviron_php_core::tls_variables(tls) {
+        let value: Cow<'static, str> = match value {
+            TlsValue::Static(text) => Cow::Borrowed(text),
+            TlsValue::Connection(text) => Cow::Owned(text.to_owned()),
+        };
+        params = params.custom(variable.name(), value);
     }
-    if let Some(cipher) = tls.ssl_cipher() {
-        params = params.custom("SSL_CIPHER", cipher);
-    }
-    params =
-        params.custom("SSL_CLIENT_VERIFY", tls.ssl_client_verify().to_string());
-    if let Some(cert) = tls.client_cert.as_ref() {
-        params = params
-            .custom("SSL_CLIENT_S_DN", cert.subject_dn.to_string())
-            .custom("SSL_CLIENT_I_DN", cert.issuer_dn.to_string());
-    }
-
     params
 }
 
