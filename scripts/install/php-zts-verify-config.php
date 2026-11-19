@@ -54,7 +54,7 @@ function verify_default_mysql_socket(): void
         } elseif ($suggestion !== null) {
             FAILED("{$setting}=" . ($value ?: '(unset)') . "; set {$setting}={$suggestion} in php.ini or the scanned INI override.");
         } else {
-            FAILED("{$setting}=" . ($value ?: '(unset)') . "; no unique standard local MySQL socket found. Set a valid socket path in php.ini or the scanned INI override.");
+            WARNING("{$setting}=" . ($value ?: '(unset)') . "; no local MySQL socket found at the standard paths. If this host connects to a local MySQL, set {$setting} in php.ini or the scanned INI override.");
         }
     }
 }

@@ -4,7 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/sysconfig/php-zts-fpm
+# The installer writes one of these, by distribution family.
+EnvironmentFile=-/etc/sysconfig/php-zts-fpm
+EnvironmentFile=-/etc/default/php-zts-fpm
 ExecStartPre=/usr/local/libexec/php-zts-fpm check
 ExecStart=/usr/local/libexec/php-zts-fpm start
 ExecReload=/usr/local/libexec/php-zts-fpm check

@@ -9,9 +9,12 @@ Usage: sudo env PHP_VERSION=VERSION [PHP_INSTALL_DIR=/opt/php-zts-embed] \
   scripts/install/php-zts-fpm-install.sh install
 
 Validate the selected runtime and existing configuration, then install the
-systemd unit, launchers and /etc/sysconfig/php-zts-fpm. Does not stop services,
-remove RPM packages, alter configuration, enable the unit or start FPM.
-The CLI launcher is installed as /usr/local/bin/php; it uses the same INI files.
+systemd unit, its launcher, a logrotate entry and the service environment
+file: /etc/sysconfig/php-zts-fpm on RHEL-family systems, /etc/default/php-zts-fpm
+on Debian-family ones. PHP_CONFIG_DIR and PHP_INI_SCAN_DIR choose the php.ini,
+php-fpm.conf and INI directory FPM uses; they are written into that file.
+Does not stop services, alter configuration, enable the unit, start FPM or
+change the system's php command.
 USAGE
   exit 0
   ;;
@@ -38,22 +41,25 @@ for value in "$PHP_INSTALL_DIR" "$PHP_CONFIG_DIR" "$PHP_INI_SCAN_DIR"; do
   [[ "$value" == /* ]] || { printf 'Configuration paths must be absolute.\n' >&2; exit 1; }
 done
 
+# The service environment file lives where the distribution keeps them; the
+# unit reads either location.
+[[ -r /etc/os-release ]] || { printf 'Cannot identify the Linux distribution: /etc/os-release is missing.\n' >&2; exit 1; }
+. /etc/os-release
+case " ${ID:-} ${ID_LIKE:-} " in
+*" rhel "* | *" fedora "* | *" centos "* | *" almalinux "* | *" rocky "*) env_dir=/etc/sysconfig ;;
+*" debian "* | *" ubuntu "*) env_dir=/etc/default ;;
+*) printf 'Unknown Linux family (%s); this installer supports RHEL and Debian families.\n' "${ID:-unknown}" >&2; exit 1 ;;
+esac
+
 source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bash "$source_dir/php-zts-fpm.sh" check
-install -d /usr/local/libexec /usr/local/bin /etc/sysconfig
+"$source_dir/php-zts-fpm.sh" check
+install -d /usr/local/libexec "$env_dir"
 install -m 0755 "$source_dir/php-zts-fpm.sh" /usr/local/libexec/php-zts-fpm
-install -m 0755 "$source_dir/php-zts-cli.sh" /usr/local/bin/php
-if [[ ! -e /usr/bin/php && ! -L /usr/bin/php ]]; then
-  ln -s /usr/local/bin/php /usr/bin/php
-fi
 install -m 0644 "$source_dir/php-zts-fpm.service" /etc/systemd/system/php-zts-fpm.service
-# The previous RPM's logrotate entry targets the same files; retire it first.
-if [[ ! -e /etc/logrotate.d/php-fpm ]]; then
-  install -m 0644 "$source_dir/php-zts-fpm.logrotate" /etc/logrotate.d/php-zts-fpm
-fi
+install -m 0644 "$source_dir/php-zts-fpm.logrotate" /etc/logrotate.d/php-zts-fpm
 printf 'PHP_VERSION=%s\nPHP_INSTALL_DIR=%s\nPHP_CONFIG_DIR=%s\nPHP_INI_SCAN_DIR=%s\n' \
   "$PHP_VERSION" "$PHP_INSTALL_DIR" "$PHP_CONFIG_DIR" "$PHP_INI_SCAN_DIR" \
-  >/etc/sysconfig/php-zts-fpm
-chmod 0644 /etc/sysconfig/php-zts-fpm
+  >"$env_dir/php-zts-fpm"
+chmod 0644 "$env_dir/php-zts-fpm"
 systemctl daemon-reload
 printf 'Installed php-zts-fpm.service; enable/start it only after stopping the previous FPM.\n'

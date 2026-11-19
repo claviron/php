@@ -16,8 +16,8 @@ Settings use the existing php_zts_fpm_prefix, php_zts_fpm_config,
 php_zts_fpm_ini and php_zts_fpm_scan_dir variables. Default prefix:
 /opt/php-zts-embed. PHP_VERSION is the expected installed PHP version.
 
-Example for PHP 8.5.12 (replace the version with the release you expect):
-  sudo env PHP_VERSION=8.5.12 ./scripts/install/php-zts-fpm-install-freebsd.sh install
+Example for PHP 8.5.13 (replace the version with the release you expect):
+  sudo env PHP_VERSION=8.5.13 ./scripts/install/php-zts-fpm-install-freebsd.sh install
 
 To inspect the installed PHP version before choosing the expected version:
   /opt/php-zts-embed/bin/php -v

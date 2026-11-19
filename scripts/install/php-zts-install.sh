@@ -6,14 +6,34 @@ PHP_INSTALL_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$PHP_INSTALL_SCRIPT_DIR/build-profile.sh"
 php_zts_profile_init
 
-PHP_VERSION="${PHP_VERSION:-8.5.12}"
+PHP_VERSION="${PHP_VERSION:-8.5.13}"
 RECONFIGURE=0
 PHP_SOURCE_CHANGED=0
 
-# This script provisions the ZTS PHP build for Linux and FreeBSD servers:
-# the developer builds, and the result is a root-owned runtime under
-# /opt/php-zts-embed that services load read-only. PHP_OWNER, PHP_GROUP and
-# PHP_INSTALL_DIR override the defaults.
+# This script provisions the ZTS PHP build on Linux, FreeBSD and macOS from the
+# official php-src release tag: the developer builds, and the result is a
+# root-owned runtime under /opt/php-zts-embed that services load read-only.
+# The configure options are the same on every OS; only where the build
+# dependencies come from differs (apt/dnf, pkg, Homebrew). PHP_OWNER,
+# PHP_GROUP and PHP_INSTALL_DIR override the defaults.
+#
+# The build is for production, tuned for how Claviron uses it: a host links
+# libphp at startup and runs ZTS requests in its own threads.
+#   release (default)  -O2 -g0, PHP debug and debug assertions off. On ELF
+#                      (Linux, FreeBSD) libphp also gets
+#                      -fno-semantic-interposition, so its calls into itself
+#                      are direct and inlinable instead of going through the
+#                      PLT, and -ftls-model=initial-exec, so the per-request
+#                      thread-local state ZTS reads constantly is one register
+#                      offset instead of a __tls_get_addr call. Valid because
+#                      hosts load libphp at startup, not with dlopen. macOS
+#                      gets neither: Mach-O symbols are not interposable and
+#                      its thread locals use one mechanism. PECL extensions
+#                      never get them; they are loaded with dlopen.
+#   debug              -O0 -g, PHP debug on, its own source tree and prefix.
+# Not yet in release, each to be measured first: PGO (php-src's make
+# prof-gen / prof-use with a training workload), and -march=native, which
+# would tie the binary to the CPU it was built on and so stays opt-in.
 #
 # Usage:
 #   scripts/install/php-zts-install.sh            # show help
@@ -23,22 +43,20 @@ PHP_SOURCE_CHANGED=0
 #   scripts/install/php-zts-install.sh dry-run        # show resolved paths
 #   scripts/install/php-zts-install.sh check-source   # prepare php-src release tag only
 #   scripts/install/php-zts-install.sh verify         # smoke-test installed php
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  echo "ERROR: this script is for Linux/FreeBSD servers only." >&2
-  exit 2
-fi
 
 # Who owns the installed runtime. Root by default: a service that loads
-# libphp must not be able to rewrite it.
+# libphp must not be able to rewrite it. macOS and FreeBSD name group 0 wheel.
 PHP_OWNER="${PHP_OWNER:-root}"
-PHP_GROUP="${PHP_GROUP:-root}"
+case "$(uname -s)" in
+Darwin | FreeBSD) PHP_GROUP="${PHP_GROUP:-wheel}" ;;
+*) PHP_GROUP="${PHP_GROUP:-root}" ;;
+esac
 PHP_CONFIG_DIR="${PHP_CONFIG_DIR:-$PHP_DIR/etc}"
 PHP_SCAN_ROOT="${PHP_SCAN_ROOT:-$PHP_CONFIG_DIR/conf.d}"
 PHP_EMBED_SCAN_DIR="${PHP_EMBED_SCAN_DIR:-$PHP_SCAN_ROOT/embed}"
 PHP_CLI_SCAN_DIR="${PHP_CLI_SCAN_DIR:-$PHP_SCAN_ROOT/cli}"
 PHP_AVAILABLE_SCAN_DIR="${PHP_AVAILABLE_SCAN_DIR:-$PHP_SCAN_ROOT/available}"
 PHP_SCAN_DIR="${PHP_SCAN_DIR:-$PHP_EMBED_SCAN_DIR}"
-LOCAL_BIN="${LOCAL_BIN:-$HOME/.local/bin}"
 MAKE_JOBS="${MAKE_JOBS:-}"
 PHP_ENABLE_FPM="${PHP_ENABLE_FPM:-1}"
 SKIP_APT="${SKIP_APT:-0}"
@@ -110,17 +128,6 @@ ALMALINUX_PACKAGES=(
   xz
 )
 
-# Reuse the common source-built libzip instead of installing a repository copy.
-if [[ -r /usr/local/libzip/lib/pkgconfig/libzip.pc ]]; then
-  export PKG_CONFIG_PATH="/usr/local/libzip/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-  local_zip_packages=()
-  for build_package in "${ALMALINUX_PACKAGES[@]}"; do
-    if [[ $build_package != libzip-devel ]]; then local_zip_packages+=("$build_package"); fi
-  done
-  ALMALINUX_PACKAGES=("${local_zip_packages[@]}")
-  unset local_zip_packages build_package
-fi
-
 FREEBSD_PACKAGES=(
   git
   gmake
@@ -151,6 +158,36 @@ FREEBSD_PACKAGES=(
   gmp
 )
 
+# macOS takes its build dependencies from Homebrew. Several are keg-only, so
+# configure_macos_env puts each one's prefix on the build paths.
+HOMEBREW_PACKAGES=(
+  autoconf
+  automake
+  bison
+  re2c
+  pkg-config
+  libtool
+  openssl@3
+  libxml2
+  libxslt
+  sqlite
+  zlib
+  bzip2
+  curl
+  libzip
+  icu4c
+  oniguruma
+  libpng
+  jpeg-turbo
+  webp
+  freetype
+  libpq
+  mysql-client
+  libsodium
+  argon2
+  gmp
+)
+
 FAILED() { printf '❌ \033[1;31m[FAILED]\033[0m %s\n' "$*" >&2; }
 WARNING() { printf '\033[1;33m[WARNING]\033[0m %s\n' "$*" >&2; }
 INFO() { printf '\033[1;34m[INFO]\033[0m %s\n' "$*" >&2; }
@@ -168,7 +205,11 @@ ensure_sudo() {
   fi
 
   command -v sudo >/dev/null 2>&1 || die "this step needs root privileges; run as root or as a user with sudo"
-  sudo -v || die "sudo authentication failed; run as root or use a user with sudo"
+  # A passwordless sudo rule needs no validation; `sudo -v` would still ask for
+  # a password when another rule for the same user requires one.
+  if ! sudo -n true 2>/dev/null; then
+    sudo -v || die "sudo authentication failed; run as root or use a user with sudo"
+  fi
   SUDO_READY=1
 }
 
@@ -185,6 +226,7 @@ detect_os() {
   case "$(uname -s)" in
   Linux) echo linux ;;
   FreeBSD) echo freebsd ;;
+  Darwin) echo macos ;;
   *) die "unsupported OS: $(uname -s)" ;;
   esac
 }
@@ -210,7 +252,7 @@ jobs_count() {
   elif command -v sysctl >/dev/null 2>&1; then
     sysctl -n hw.ncpu
   else
-    echo 2
+    die "cannot count CPUs; set MAKE_JOBS"
   fi
 }
 
@@ -235,6 +277,37 @@ re2c_version() {
   re2c --version 2>/dev/null | awk 'NR == 1 {print $2}'
 }
 
+# The packages a list names, minus those whose library pkg-config already
+# finds: an operator who supplies a library through PKG_CONFIG_PATH keeps it,
+# and no package manager installs a second copy beside it. Applies to every
+# OS's list; before pkg-config itself is installed, nothing is dropped.
+without_provided() {
+  local package
+  for package in "$@"; do
+    case "$package" in
+    libzip-dev | libzip-devel | libzip)
+      if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libzip; then
+        log "libzip found through pkg-config; not installing $package"
+        continue
+      fi
+      ;;
+    esac
+    printf '%s\n' "$package"
+  done
+}
+
+# Fill the named array with a package list minus what is already provided.
+# A read loop, not mapfile: macOS ships bash 3.2.
+select_packages() {
+  local target="$1"
+  shift
+  local line
+  eval "$target=()"
+  while IFS= read -r line; do
+    eval "$target+=(\"\$line\")"
+  done < <(without_provided "$@")
+}
+
 print_debian_deps() {
   cat <<EOF
 Debian/Ubuntu dependencies:
@@ -257,17 +330,26 @@ FreeBSD dependencies:
 EOF
 }
 
+print_macos_deps() {
+  cat <<EOF
+macOS dependencies (Homebrew):
+  brew install ${HOMEBREW_PACKAGES[*]}
+EOF
+}
+
 install_debian_deps() {
   if [[ "$SKIP_APT" == "1" ]]; then
     log "SKIP_APT=1, skipping apt dependency install"
     return 0
   fi
 
-  command -v apt-get >/dev/null 2>&1 || return 0
+  command -v apt-get >/dev/null 2>&1 || die "apt-get not found; install the build dependencies yourself and set SKIP_APT=1"
 
+  local packages
+  select_packages packages "${DEBIAN_PACKAGES[@]}"
   log "installing Debian build dependencies"
   sudo_cmd apt-get update
-  sudo_cmd apt-get install -y "${DEBIAN_PACKAGES[@]}"
+  sudo_cmd apt-get install -y "${packages[@]}"
 }
 
 install_almalinux_deps() {
@@ -276,13 +358,15 @@ install_almalinux_deps() {
     return 0
   fi
 
-  command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1 || return 0
+  command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1 || die "dnf/yum not found; install the build dependencies yourself and set SKIP_APT=1"
 
   local installer="dnf"
   command -v dnf >/dev/null 2>&1 || installer="yum"
 
+  local packages
+  select_packages packages "${ALMALINUX_PACKAGES[@]}"
   log "installing AlmaLinux/RHEL build dependencies"
-  sudo_cmd "$installer" install -y "${ALMALINUX_PACKAGES[@]}"
+  sudo_cmd "$installer" install -y "${packages[@]}"
 }
 
 install_freebsd_deps() {
@@ -291,17 +375,33 @@ install_freebsd_deps() {
     return 0
   fi
 
-  command -v pkg >/dev/null 2>&1 || return 0
+  command -v pkg >/dev/null 2>&1 || die "pkg not found; install the build dependencies yourself and set SKIP_APT=1"
 
+  local packages
+  select_packages packages "${FREEBSD_PACKAGES[@]}"
   log "installing FreeBSD build dependencies"
-  sudo_cmd pkg install -y "${FREEBSD_PACKAGES[@]}"
+  sudo_cmd pkg install -y "${packages[@]}"
+}
+
+install_macos_deps() {
+  if [[ "$SKIP_APT" == "1" ]]; then
+    log "SKIP_APT=1, skipping Homebrew dependency install"
+    return 0
+  fi
+
+  command -v brew >/dev/null 2>&1 || die "Homebrew not found; install it from https://brew.sh"
+
+  local packages
+  select_packages packages "${HOMEBREW_PACKAGES[@]}"
+  log "installing macOS build dependencies (Homebrew)"
+  brew install "${packages[@]}"
 }
 
 configure_linux_env() {
   case "$(detect_linux_family)" in
   debian) install_debian_deps ;;
   rhel) install_almalinux_deps ;;
-  *) log "unknown Linux family; skipping automatic package install" ;;
+  *) [[ "$SKIP_APT" == "1" ]] || die "unknown Linux family; install the build dependencies yourself and set SKIP_APT=1" ;;
   esac
   export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}"
 }
@@ -309,9 +409,7 @@ configure_linux_env() {
 configure_freebsd_env() {
   install_freebsd_deps
   MAKE="${MAKE:-gmake}"
-  CC="${CC:-/usr/bin/cc}"
-  CXX="${CXX:-/usr/bin/c++}"
-  export MAKE CC CXX
+  export MAKE
 
   local ssl_dir="/usr/local"
   CPPFLAGS="-I${ssl_dir}/include${CPPFLAGS:+ $CPPFLAGS}"
@@ -320,13 +418,45 @@ configure_freebsd_env() {
   export CPPFLAGS LDFLAGS PKG_CONFIG_PATH
 }
 
+# Put one Homebrew package's prefix on the build paths; keg-only packages are
+# not on the default compiler or pkg-config paths.
+add_homebrew_package() {
+  local prefix
+  prefix="$(brew --prefix "$1")"
+  PATH="$prefix/bin:$PATH"
+  CPPFLAGS="-I$prefix/include${CPPFLAGS:+ $CPPFLAGS}"
+  LDFLAGS="-L$prefix/lib${LDFLAGS:+ $LDFLAGS}"
+  if [[ -d "$prefix/lib/pkgconfig" ]]; then
+    PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+  fi
+}
+
+configure_macos_env() {
+  install_macos_deps
+  command -v brew >/dev/null 2>&1 || die "Homebrew not found; install it from https://brew.sh"
+
+  local package
+  for package in bison re2c openssl@3 libxml2 libxslt sqlite zlib bzip2 curl \
+    libzip icu4c oniguruma libpng jpeg-turbo webp freetype libpq mysql-client \
+    libsodium argon2 gmp; do
+    add_homebrew_package "$package"
+  done
+
+  # pkg-config alone misses some of ICU's libraries.
+  local icu
+  icu="$(brew --prefix icu4c)"
+  ICU_CFLAGS="-I$icu/include${ICU_CFLAGS:+ $ICU_CFLAGS}"
+  ICU_LIBS="-L$icu/lib -licui18n -licuio -licuuc -licudata${ICU_LIBS:+ $ICU_LIBS}"
+  export PATH CPPFLAGS LDFLAGS PKG_CONFIG_PATH ICU_CFLAGS ICU_LIBS
+}
+
 prepare_source() {
   local release_tag="php-$PHP_VERSION"
   local local_tag_sha
   local remote_tag_sha
 
   mkdir -p "$(dirname "$PHP_SRC_DIR")"
-  sudo_cmd mkdir -p "$(dirname "$PHP_DIR")"
+  [[ -d "$(dirname "$PHP_DIR")" ]] || sudo_cmd mkdir -p "$(dirname "$PHP_DIR")"
 
   if [[ ! -d "$PHP_SRC_DIR/.git" ]]; then
     log "php-src not found, cloning upstream → $PHP_SRC_DIR"
@@ -356,6 +486,20 @@ prepare_source() {
   git switch --detach "refs/tags/$release_tag"
 }
 
+# Release flags for libphp on ELF (Linux, FreeBSD). libphp is a shared
+# library: without -fno-semantic-interposition its calls into itself go
+# through the PLT and are not inlined, and hosts load it at startup, so ZTS's
+# thread-local state can use the initial-exec model instead of
+# __tls_get_addr. Mach-O needs neither: its symbols are not interposable (two-
+# level namespace) and its thread locals use one mechanism. Only libphp gets
+# them; PECL extensions are loaded with dlopen, where initial-exec is unsafe.
+php_zts_libphp_flags() {
+  [[ "$PHP_BUILD_PROFILE" == release ]] || return 0
+  case "$1" in
+  linux | freebsd) printf '%s' '-fno-semantic-interposition -ftls-model=initial-exec' ;;
+  esac
+}
+
 configure_build_env() {
   local os="$1"
 
@@ -363,19 +507,27 @@ configure_build_env() {
   export PHP="$PHP_DIR/bin/php"
   export PHPIZE="$PHP_DIR/bin/phpize"
   export PHP_CONFIG="$PHP_DIR/bin/php-config"
-  export PATH="$LOCAL_BIN:$PHP_DIR/bin:$PATH"
+  export PATH="$PHP_DIR/bin:$PATH"
 
   case "$os" in
   linux)
     configure_linux_env
     ;;
   freebsd) configure_freebsd_env ;;
+  macos) configure_macos_env ;;
   esac
 
   export LDFLAGS="${LDFLAGS:-}"
   export CPPFLAGS="${CPPFLAGS:-}"
   export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}"
   php_zts_compiler_flags
+  local libphp_flags
+  libphp_flags="$(php_zts_libphp_flags "$os")"
+  if [[ -n "$libphp_flags" ]]; then
+    CFLAGS="$CFLAGS $libphp_flags"
+    CXXFLAGS="$CXXFLAGS $libphp_flags"
+    export CFLAGS CXXFLAGS
+  fi
 }
 
 verify_re2c() {
@@ -394,15 +546,6 @@ verify_re2c() {
     printf 'ERROR: re2c is missing; PHP requires >= %s\n' "$min_version" >&2
   fi
 
-  if [[ "$(detect_os)" == "linux" && "$(detect_linux_family)" == "rhel" ]]; then
-    cat >&2 <<EOF
-
-On AlmaLinux/RHEL, install a modern developer-local re2c first:
-  scripts/re2c-install-almalinux.sh
-  export PATH="$LOCAL_BIN:\$PATH"
-
-EOF
-  fi
   exit 1
 }
 
@@ -442,6 +585,7 @@ verify_pkg_config() {
       esac
       ;;
     freebsd) print_freebsd_deps >&2 ;;
+    macos) print_macos_deps >&2 ;;
     *) print_debian_deps >&2 ;;
     esac
     exit 1
@@ -465,12 +609,17 @@ clean_tree() (
 build_php() {
   local configure_args=()
   local iconv_configure_arg="--with-iconv"
+  local bz2_configure_arg="--with-bz2"
 
   if [[ "$(detect_os)" == "freebsd" ]]; then
     # FreeBSD provides iconv in libc, while ports install GNU libiconv under
     # /usr/local. The ports include path exposes GNU headers, so select the
     # matching library explicitly instead of mixing them with libc iconv.
     iconv_configure_arg="--with-iconv=/usr/local"
+  fi
+  if [[ "$(detect_os)" == "macos" ]]; then
+    # bzip2 has no pkg-config file; configure needs its keg's prefix.
+    bz2_configure_arg="--with-bz2=$(brew --prefix bzip2)"
   fi
 
   sudo_cmd mkdir -p "$PHP_CONFIG_DIR" "$PHP_SCAN_ROOT" "$PHP_AVAILABLE_SCAN_DIR" "$PHP_EMBED_SCAN_DIR" "$PHP_CLI_SCAN_DIR"
@@ -514,7 +663,7 @@ build_php() {
     --with-webp
     --with-freetype
     --with-zlib
-    --with-bz2
+    "$bz2_configure_arg"
     --with-zip
     --with-curl
     "$iconv_configure_arg"
@@ -575,7 +724,7 @@ build_php() {
 write_default_ini() {
   local ini="$PHP_CONFIG_DIR/php.ini"
   local ca_file="/etc/ssl/cert.pem"
-  local private_ca="${PHP_PRIVATE_CA:-/etc/certstore/cacert.pem}"
+  local private_ca="${PHP_PRIVATE_CA:-}"
   local ca_bundle="$PHP_CONFIG_DIR/ca-bundle.pem"
   local ca_ini="$PHP_AVAILABLE_SCAN_DIR/10-ca.ini"
 
@@ -588,7 +737,8 @@ write_default_ini() {
   # Ports OpenSSL has a different compiled CA path from FreeBSD base.
   # Keep an operator-supplied private authority in the installation's CA bundle.
   if [[ "$(detect_os)" == "freebsd" && -r "$ca_file" ]]; then
-    if [[ -r "$private_ca" ]]; then
+    if [[ -n "$private_ca" ]]; then
+      [[ -r "$private_ca" ]] || die "PHP_PRIVATE_CA is not readable: $private_ca"
       cat "$ca_file" "$private_ca" >"$ca_bundle"
       ca_file="$ca_bundle"
     fi
@@ -598,19 +748,40 @@ write_default_ini() {
   fi
 }
 
+# The embed library's file name: macOS builds a dylib.
+libphp_path() {
+  if [[ "$(detect_os)" == "macos" ]]; then
+    echo "$PHP_DIR/lib/libphp.dylib"
+  else
+    echo "$PHP_DIR/lib/libphp.so"
+  fi
+}
+
+# getent is not available on macOS; id and dscl answer the same question there.
+account_exists() {
+  local kind="$1" name="$2"
+  if command -v getent >/dev/null 2>&1; then
+    getent "$kind" "$name" >/dev/null 2>&1
+  elif [[ "$kind" == passwd ]]; then
+    id -u "$name" >/dev/null 2>&1
+  else
+    dscl . -read "/Groups/$name" >/dev/null 2>&1
+  fi
+}
+
 fix_runtime_permissions() {
-  if getent passwd "$PHP_OWNER" >/dev/null 2>&1 && getent group "$PHP_GROUP" >/dev/null 2>&1; then
+  if account_exists passwd "$PHP_OWNER" && account_exists group "$PHP_GROUP"; then
     log "setting runtime ownership to $PHP_OWNER:$PHP_GROUP"
     sudo_cmd chown -R "$PHP_OWNER:$PHP_GROUP" "$PHP_DIR"
   else
-    log "owner $PHP_OWNER:$PHP_GROUP not found; leaving current ownership on $PHP_DIR"
+    die "owner $PHP_OWNER:$PHP_GROUP does not exist; set PHP_OWNER and PHP_GROUP"
   fi
 
   sudo_cmd find "$PHP_DIR" -type d -exec chmod 0755 {} +
   sudo_cmd find "$PHP_DIR" -type f -exec chmod u=rwX,go=rX {} +
   sudo_cmd find "$PHP_DIR/bin" -type f -exec chmod 0755 {} +
   sudo_cmd find "$PHP_DIR/sbin" -type f -exec chmod 0755 {} + 2>/dev/null || true
-  [[ -f "$PHP_DIR/lib/libphp.so" ]] && sudo_cmd chmod 0755 "$PHP_DIR/lib/libphp.so"
+  [[ -f "$(libphp_path)" ]] && sudo_cmd chmod 0755 "$(libphp_path)"
 }
 
 register_runtime_library() {
@@ -619,6 +790,20 @@ register_runtime_library() {
     return 0
   fi
   local conf="/etc/ld.so.conf.d/php-zts-embed.conf"
+
+  if [[ "$(detect_os)" == "macos" ]]; then
+    # macOS has no loader cache. PHP installs the dylib as @rpath/libphp.dylib;
+    # giving it its absolute install name means every binary linking it
+    # records the full path, so it loads without an rpath, a symlink or
+    # DYLD_LIBRARY_PATH. Changing the header invalidates the signature, which
+    # Apple silicon requires, so the dylib is signed again (ad hoc).
+    local dylib
+    dylib="$(libphp_path)"
+    log "setting the install name of $dylib to its own path"
+    sudo_cmd install_name_tool -id "$dylib" "$dylib"
+    sudo_cmd codesign --force --sign - "$dylib"
+    return 0
+  fi
 
   if [[ "$(detect_os)" == "freebsd" ]]; then
     # FreeBSD ldconfig at boot scans /usr/local/libdata/ldconfig/* (per
@@ -639,13 +824,22 @@ register_runtime_library() {
   sudo_cmd ldconfig
 }
 
+# Two separate questions. The install check decides whether this PHP is
+# installed correctly, and fails the run if not. The configuration report reads
+# this host's php.ini against the services it finds (database sockets, CA
+# files); it only advises, because those belong to the host, not the install.
 verify_install() {
   local cli_version
   local config_version
 
+  INFO "Install check"
   [[ -x "$PHP_DIR/bin/php" ]] || die "php binary missing: $PHP_DIR/bin/php"
   [[ -x "$PHP_DIR/bin/php-config" ]] || die "php-config missing: $PHP_DIR/bin/php-config"
-  [[ -f "$PHP_DIR/lib/libphp.so" ]] || die "libphp.so missing: $PHP_DIR/lib/libphp.so"
+  [[ -f "$(libphp_path)" ]] || die "embed library missing: $(libphp_path)"
+  if [[ "$(detect_os)" == "macos" && "$PHP_BUILD_PROFILE" != debug ]]; then
+    [[ "$(otool -D "$(libphp_path)" | sed -n '2p')" == "$(libphp_path)" ]] ||
+      die "$(libphp_path) does not carry its own path as its install name"
+  fi
   php_zts_require_profile
   [[ "$("$PHP_DIR/bin/php" -n -r 'echo (int) PHP_ZTS;')" == 1 ]] || die 'Expected a ZTS PHP build.'
 
@@ -671,6 +865,9 @@ verify_install() {
     fwrite(STDERR, "\033[1;32m[✔]\033[0m PHP GD JPEG/PNG/WebP/FreeType support verified\n");
   '
 
+  SUCCESS "PHP $PHP_VERSION ($PHP_BUILD_PROFILE) is installed correctly at $PHP_DIR"
+
+  INFO "Configuration report for this host (advisory; it does not affect the installation)"
   local config_report="$PHP_INSTALL_SCRIPT_DIR/php-zts-verify-config.php"
   local config_failed=0
   if ! PHPRC="$PHP_CONFIG_DIR/php.ini" PHP_INI_SCAN_DIR="$PHP_EMBED_SCAN_DIR" "$PHP_DIR/bin/php" "$config_report" embed; then
@@ -682,11 +879,10 @@ verify_install() {
     fi
   fi
   if [[ "$config_failed" == 1 ]]; then
-    FAILED "Installed PHP configuration verification failed; review the settings reported above."
-    return 1
+    WARNING "The configuration report found php.ini settings to review for this host (above). The installation itself is complete."
+  else
+    SUCCESS "The configuration report found nothing to review."
   fi
-  SUCCESS "Installed PHP configuration verification passed."
-  log "Verified PHP build profile: $PHP_BUILD_PROFILE"
 }
 
 dry_run() {
@@ -697,12 +893,13 @@ dry_run() {
   echo "php version: $PHP_VERSION"
   echo "build profile: $PHP_BUILD_PROFILE"
   echo "C compiler: ${CC:-cc}"
-  echo "CFLAGS: ${CFLAGS:+$CFLAGS }$PHP_PROFILE_FLAGS"
-  echo "CXXFLAGS: ${CXXFLAGS:+$CXXFLAGS }$PHP_PROFILE_FLAGS"
+  local libphp_flags
+  libphp_flags="$(php_zts_libphp_flags "$(detect_os)")"
+  echo "CFLAGS: ${CFLAGS:+$CFLAGS }$PHP_PROFILE_FLAGS${libphp_flags:+ $libphp_flags}"
+  echo "CXXFLAGS: ${CXXFLAGS:+$CXXFLAGS }$PHP_PROFILE_FLAGS${libphp_flags:+ $libphp_flags}"
   echo "debug option: $PHP_DEBUG_OPTION"
   echo "php-src: $PHP_SRC_DIR"
   echo "prefix: $PHP_DIR"
-  echo "local bin: $LOCAL_BIN"
   echo "config dir: $PHP_CONFIG_DIR"
   echo "available scan dir: $PHP_AVAILABLE_SCAN_DIR"
   echo "embed scan dir: $PHP_EMBED_SCAN_DIR"
@@ -718,6 +915,7 @@ dry_run() {
     esac
     ;;
   freebsd) print_freebsd_deps ;;
+  macos) print_macos_deps ;;
   esac
 }
 
@@ -743,9 +941,14 @@ Compiler, flag, profile and configure-option changes also trigger a clean
 reconfiguration. Retry a failed make with unchanged settings to reuse completed
 objects. Use install --configure to force a clean reconfiguration.
 
-PHP_BUILD_PROFILE=release (default): -O2 -g0, PHP debug and debug assertions off.
+PHP_BUILD_PROFILE=release (default): -O2 -g0, PHP debug and debug assertions off;
+  on Linux and FreeBSD libphp also gets -fno-semantic-interposition and
+  -ftls-model=initial-exec (not on macOS, where neither applies).
 PHP_BUILD_PROFILE=debug: -O0 -g, PHP debug enabled, separate source and prefix.
-Debug defaults to /opt/php-zts-embed-debug and is not registered with ldconfig.
+Debug defaults to /opt/php-zts-embed-debug and is not registered with the
+loader (ldconfig, or the install name on macOS).
+On macOS the build dependencies come from Homebrew; SKIP_APT=1 skips installing
+them, as it skips apt, dnf and pkg elsewhere.
 CC and CXX select the compiler; inherited include/link flags are preserved.
 Xdebug is an independent, explicitly installed CLI extension.
 
@@ -781,6 +984,7 @@ main() {
       esac
       ;;
     freebsd) print_freebsd_deps ;;
+    macos) print_macos_deps ;;
     esac
     exit 0
     ;;

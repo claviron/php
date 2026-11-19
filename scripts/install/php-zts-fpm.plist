@@ -1,33 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for php-zts-fpm-macos.sh install, which fills in the program, its
+  environment and the user's own paths before loading it as a LaunchAgent.
+-->
 <plist version="1.0">
 <dict>
-    <key>KeepAlive</key>
-    <true/>
     <key>Label</key>
     <string>php-zts-fpm</string>
-    <key>LimitLoadToSessionType</key>
-    <array>
-        <string>Aqua</string>
-        <string>Background</string>
-        <string>LoginWindow</string>
-        <string>StandardIO</string>
-        <string>System</string>
-    </array>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/opt/php-zts-embed/sbin/php-fpm</string>
-        <string>--nodaemonize</string>
-        <string>--fpm-config</string>
-        <string>/opt/php-zts-embed/etc/php-fpm.conf</string>
-    </array>
+    <key>KeepAlive</key>
+    <true/>
     <key>RunAtLoad</key>
     <true/>
+    <key>ProgramArguments</key>
+    <array/>
+    <key>EnvironmentVariables</key>
+    <dict/>
     <key>StandardErrorPath</key>
-    <string>/opt/php-zts-embed/var/log/php-fpm.log</string>
+    <string></string>
     <key>StandardOutPath</key>
-    <string>/opt/php-zts-embed/var/log/php-fpm.log</string>
+    <string></string>
     <key>WorkingDirectory</key>
-    <string>/opt/php-zts-embed/var</string>
+    <string></string>
 </dict>
 </plist>

@@ -5,21 +5,15 @@ source "$SCRIPT_DIR/build-profile.sh"
 php_zts_profile_init
 php_zts_compiler_flags
 
-# Share the source-built ZIP library with the legacy PHP runtime.
-if [[ -r /usr/local/libzip/lib/pkgconfig/libzip.pc ]]; then
-  export PKG_CONFIG_PATH="/usr/local/libzip/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-fi
-
-# PECL extensions for the PHP ZTS runtime `php-zts-install.sh` provisions.
-# Linux and FreeBSD servers only: the runtime is root-owned under
-# /opt/php-zts-embed and services load it read-only. PHP_OWNER, PHP_GROUP and
-# PHP_INSTALL_DIR override the defaults.
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  echo "ERROR: this script is for Linux/FreeBSD servers only." >&2
-  exit 2
-fi
+# PECL extensions for the PHP ZTS runtime `php-zts-install.sh` provisions, on
+# Linux, FreeBSD and macOS: the runtime is root-owned under /opt/php-zts-embed
+# and services load it read-only. PHP_OWNER, PHP_GROUP and PHP_INSTALL_DIR
+# override the defaults; macOS and FreeBSD name group 0 wheel.
 PHP_OWNER="${PHP_OWNER:-root}"
-PHP_GROUP="${PHP_GROUP:-root}"
+case "$(uname -s)" in
+Darwin | FreeBSD) PHP_GROUP="${PHP_GROUP:-wheel}" ;;
+*) PHP_GROUP="${PHP_GROUP:-root}" ;;
+esac
 
 SUDO_READY=0
 
@@ -36,10 +30,10 @@ PHP_CLI_SCAN_DIR="${PHP_CLI_SCAN_DIR:-$PHP_SCAN_ROOT/cli}"
 PHP_EXT_DIR="${PHP_EXT_DIR:-}"
 SKIP_APT="${SKIP_APT:-0}"
 PECL_CHANNEL_REFRESHED=0
+# Extensions this run was asked for that did not end up loaded.
+NOT_LOADED=()
 
-LOCAL_BIN="${LOCAL_BIN:-$HOME/.local/bin}"
-
-PATH="$LOCAL_BIN:$PHP_DIR/bin:$PATH"
+PATH="$PHP_DIR/bin:$PATH"
 export PHPRC="$PHP_INI"
 export PHP_INI_SCAN_DIR="$PHP_EMBED_SCAN_DIR"
 export PHP_PEAR_PHP_BIN="$PHP"
@@ -59,7 +53,6 @@ REQUIRED_COMMANDS=(
 # and CLI because PHP requests may use them directly under Claviron.
 EXTENSIONS=(
   redis
-  igbinary
 )
 
 # Development tooling for the standalone PHP CLI. Claviron tasks, daemons,
@@ -67,9 +60,7 @@ EXTENSIONS=(
 # runtime capabilities therefore do not belong in this list.
 #protobuf removed - 19.09.2026
 #grpc removed - 19.09.2026
-CLI_ONLY_EXTENSIONS=(
-  parallel
-)
+CLI_ONLY_EXTENSIONS=()
 # sync not 8.5 yet
 
 # Installed only by its explicit command, never by install or install-optional.
@@ -83,9 +74,10 @@ MANUAL_CLI_ONLY_EXTENSIONS=(
 OPTIONAL_CLI_ONLY_EXTENSIONS=(
   event
   uv
+  igbinary
   msgpack
   zstd
-  # parallel
+  parallel
 )
 
 DEBIAN_PACKAGES=(
@@ -123,6 +115,18 @@ FREEBSD_PACKAGES=(
   libuv
 )
 
+# macOS takes the extensions' build dependencies from Homebrew.
+HOMEBREW_PACKAGES=(
+  autoconf
+  pkg-config
+  re2c
+  pcre2
+  zstd
+  libevent
+  libuv
+  openssl@3
+)
+
 log() { printf '%s\n' "INFO: $*"; }
 ok() { printf '%s\n' "OK: $*"; }
 warn() { printf '%s\n' "WARN: $*" >&2; }
@@ -149,7 +153,11 @@ ensure_sudo() {
   fi
 
   command -v sudo >/dev/null 2>&1 || die "this step needs root privileges; run as root or as a user with sudo"
-  sudo -v || die "sudo authentication failed; run as root or use a user with sudo"
+  # A passwordless sudo rule needs no validation; `sudo -v` would still ask for
+  # a password when another rule for the same user requires one.
+  if ! sudo -n true 2>/dev/null; then
+    sudo -v || die "sudo authentication failed; run as root or use a user with sudo"
+  fi
   SUDO_READY=1
 }
 
@@ -166,6 +174,7 @@ detect_os() {
   case "$(uname -s)" in
   Linux) echo linux ;;
   FreeBSD) echo freebsd ;;
+  Darwin) echo macos ;;
   *) die "unsupported OS: $(uname -s)" ;;
   esac
 }
@@ -330,7 +339,7 @@ ensure_extension_dir() {
 
 configure_freebsd_ca() {
   local system_ca="/etc/ssl/cert.pem"
-  local private_ca="${PHP_PRIVATE_CA:-/etc/certstore/cacert.pem}"
+  local private_ca="${PHP_PRIVATE_CA:-}"
   local ca_bundle="$PHP_DIR/etc/ca-bundle.pem"
   local ca_file="$system_ca"
   local ca_ini="$PHP_AVAILABLE_SCAN_DIR/10-ca.ini"
@@ -339,7 +348,8 @@ configure_freebsd_ca() {
   [[ -r "$system_ca" ]] || die "FreeBSD CA bundle not found: $system_ca"
 
   root_cmd mkdir -p "$PHP_AVAILABLE_SCAN_DIR" "$PHP_EMBED_SCAN_DIR" "$PHP_CLI_SCAN_DIR"
-  if [[ -r "$private_ca" ]]; then
+  if [[ -n "$private_ca" ]]; then
+    [[ -r "$private_ca" ]] || die "PHP_PRIVATE_CA is not readable: $private_ca"
     log "adding the operator-supplied authority to the PHP CA bundle"
     cat "$system_ca" "$private_ca" | root_cmd tee "$ca_bundle" >/dev/null
     ca_file="$ca_bundle"
@@ -406,7 +416,7 @@ reconcile_scan_profiles() {
   reconcile_scan_dir "$PHP_EMBED_SCAN_DIR" "${EXTENSIONS[@]}"
   reconcile_scan_dir "$PHP_CLI_SCAN_DIR" \
     "${EXTENSIONS[@]}" \
-    "${CLI_ONLY_EXTENSIONS[@]}" \
+    ${CLI_ONLY_EXTENSIONS[@]+"${CLI_ONLY_EXTENSIONS[@]}"} \
     "${OPTIONAL_CLI_ONLY_EXTENSIONS[@]}" \
     "${MANUAL_CLI_ONLY_EXTENSIONS[@]}"
 }
@@ -485,13 +495,20 @@ Install FreeBSD build dependencies first if needed:
 EOF
 }
 
+print_macos_deps() {
+  cat <<EOF
+macOS PECL build dependencies (Homebrew):
+  brew install ${HOMEBREW_PACKAGES[*]}
+EOF
+}
+
 install_debian_deps() {
   if [[ "$SKIP_APT" == "1" ]]; then
     log "SKIP_APT=1, skipping apt dependency install"
     return 0
   fi
 
-  command -v apt-get >/dev/null 2>&1 || return 0
+  command -v apt-get >/dev/null 2>&1 || die "apt-get not found; install the build dependencies yourself and set SKIP_APT=1"
 
   log "installing Debian PECL build dependencies"
   root_cmd apt-get update
@@ -504,7 +521,7 @@ install_almalinux_deps() {
     return 0
   fi
 
-  command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1 || return 0
+  command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1 || die "dnf/yum not found; install the build dependencies yourself and set SKIP_APT=1"
 
   local installer="dnf"
   command -v dnf >/dev/null 2>&1 || installer="yum"
@@ -519,10 +536,34 @@ install_freebsd_deps() {
     return 0
   fi
 
-  command -v pkg >/dev/null 2>&1 || return 0
+  command -v pkg >/dev/null 2>&1 || die "pkg not found; install the build dependencies yourself and set SKIP_APT=1"
 
   log "installing FreeBSD PECL build dependencies"
   root_cmd pkg install -y "${FREEBSD_PACKAGES[@]}"
+}
+
+install_macos_deps() {
+  if [[ "$SKIP_APT" == "1" ]]; then
+    log "SKIP_APT=1, skipping Homebrew dependency install"
+  else
+    command -v brew >/dev/null 2>&1 || die "Homebrew not found; install it from https://brew.sh"
+    log "installing macOS PECL build dependencies (Homebrew)"
+    brew install "${HOMEBREW_PACKAGES[@]}"
+  fi
+
+  # Several of these are keg-only; put their prefixes on the paths the PECL
+  # builds receive (pecl_install_one passes CPPFLAGS, LDFLAGS, PKG_CONFIG_PATH).
+  command -v brew >/dev/null 2>&1 || die "Homebrew not found; install it from https://brew.sh"
+  local package prefix
+  for package in pcre2 zstd libevent libuv openssl@3; do
+    prefix="$(brew --prefix "$package")"
+    CPPFLAGS="-I$prefix/include${CPPFLAGS:+ $CPPFLAGS}"
+    LDFLAGS="-L$prefix/lib${LDFLAGS:+ $LDFLAGS}"
+    if [[ -d "$prefix/lib/pkgconfig" ]]; then
+      PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    fi
+  done
+  export CPPFLAGS LDFLAGS PKG_CONFIG_PATH
 }
 
 install_os_deps() {
@@ -531,10 +572,11 @@ install_os_deps() {
     case "$(detect_linux_family)" in
     debian) install_debian_deps ;;
     rhel) install_almalinux_deps ;;
-    *) log "unknown Linux family; skipping automatic package install" ;;
+    *) [[ "$SKIP_APT" == "1" ]] || die "unknown Linux family; install the build dependencies yourself and set SKIP_APT=1" ;;
     esac
     ;;
   freebsd) install_freebsd_deps ;;
+  macos) install_macos_deps ;;
   esac
 }
 
@@ -579,6 +621,7 @@ pecl_install_one() {
       ok "loaded: $module_name ($mode)"
     else
       warn "installed but not loaded: $module_name ($mode)"
+      NOT_LOADED+=("$module_name")
     fi
     return 0
   fi
@@ -617,6 +660,7 @@ pecl_install_one() {
     ok "loaded: $module_name ($mode)"
   else
     warn "not loaded: $module_name ($mode)"
+    NOT_LOADED+=("$module_name")
   fi
 }
 
@@ -642,10 +686,32 @@ install_optional_extensions() {
   done
 }
 
-finish_runtime_install() {
-  if getent passwd "$PHP_OWNER" >/dev/null 2>&1 && getent group "$PHP_GROUP" >/dev/null 2>&1; then
-    root_cmd chown -R "$PHP_OWNER:$PHP_GROUP" "$PHP_DIR"
+# getent is not available on macOS; id and dscl answer the same question there.
+account_exists() {
+  local kind="$1" name="$2"
+  if command -v getent >/dev/null 2>&1; then
+    getent "$kind" "$name" >/dev/null 2>&1
+  elif [[ "$kind" == passwd ]]; then
+    id -u "$name" >/dev/null 2>&1
+  else
+    dscl . -read "/Groups/$name" >/dev/null 2>&1
   fi
+}
+
+# The run's verdict: every requested extension loaded, or a failure naming
+# those that did not. A PECL release can lag a new PHP; that is reported, not
+# hidden behind warnings.
+report_result() {
+  if [[ "${#NOT_LOADED[@]}" -gt 0 ]]; then
+    die "not loaded for PHP $("$PHP" -n -r 'echo PHP_VERSION;'): ${NOT_LOADED[*]}; see the build output above"
+  fi
+  ok "all requested extensions are loaded"
+}
+
+finish_runtime_install() {
+  account_exists passwd "$PHP_OWNER" && account_exists group "$PHP_GROUP" ||
+    die "owner $PHP_OWNER:$PHP_GROUP does not exist; set PHP_OWNER and PHP_GROUP"
+  root_cmd chown -R "$PHP_OWNER:$PHP_GROUP" "$PHP_DIR"
 
   if [[ "$PHP_BUILD_PROFILE" == debug ]]; then
     log 'Debug extensions stay in the private debug prefix; ldconfig is unchanged.'
@@ -660,6 +726,10 @@ finish_runtime_install() {
   linux)
     printf '%s\n' "$PHP_DIR/lib" | root_cmd tee /etc/ld.so.conf.d/php-zts-embed.conf >/dev/null
     root_cmd ldconfig
+    ;;
+  macos)
+    # No loader cache on macOS: PHP loads extensions by path from its
+    # extension_dir, and libphp already carries its own install name.
     ;;
   esac
 }
@@ -682,7 +752,7 @@ install_all() {
     pecl_install_one "$ext"
   done
 
-  for ext in "${CLI_ONLY_EXTENSIONS[@]}"; do
+  for ext in ${CLI_ONLY_EXTENSIONS[@]+"${CLI_ONLY_EXTENSIONS[@]}"}; do
     pecl_install_one "$ext" "$ext" cli
   done
 
@@ -693,6 +763,7 @@ install_all() {
   fi
 
   finish_runtime_install
+  report_result
 }
 
 install_embed() {
@@ -705,22 +776,26 @@ install_embed() {
   done
 
   finish_runtime_install
+  report_result
 }
 
 install_optional() {
   prepare_install
   install_optional_extensions
   finish_runtime_install
+  report_result
 }
 
 install_xdebug() {
   prepare_install
   pecl_install_one xdebug xdebug cli
   finish_runtime_install
+  report_result
 }
 
 verify() {
   local missing=()
+  local in_embed=()
   local ext
   local so_state
 
@@ -749,7 +824,7 @@ verify() {
 
   echo
   printf '%s\n' "CLI-only extensions:"
-  for ext in "${CLI_ONLY_EXTENSIONS[@]}"; do
+  for ext in ${CLI_ONLY_EXTENSIONS[@]+"${CLI_ONLY_EXTENSIONS[@]}"}; do
     so_state="${YELLOW}missing .so${RESET}"
     extension_so_exists "$ext" && so_state="${GREEN}.so ok${RESET}"
 
@@ -763,12 +838,12 @@ verify() {
 
   echo
   printf '%s\n' "Embed exclusion checks:"
-  for ext in "${CLI_ONLY_EXTENSIONS[@]}" "${OPTIONAL_CLI_ONLY_EXTENSIONS[@]}" "${MANUAL_CLI_ONLY_EXTENSIONS[@]}"; do
+  for ext in ${CLI_ONLY_EXTENSIONS[@]+"${CLI_ONLY_EXTENSIONS[@]}"} "${OPTIONAL_CLI_ONLY_EXTENSIONS[@]}" "${MANUAL_CLI_ONLY_EXTENSIONS[@]}"; do
     if ini_absent "$ext" "$PHP_EMBED_SCAN_DIR"; then
       printf '%bOK%b      %-12s embed      absent\n' "$GREEN" "$RESET" "$ext"
     else
       printf '%bUNEXPECTED%b %-12s embed      should be cli-only\n' "$RED" "$RESET" "$ext"
-      missing+=("$ext-in-embed")
+      in_embed+=("$ext")
     fi
   done
 
@@ -786,13 +861,18 @@ verify() {
   done
 
   echo
-  if [[ "${#missing[@]}" -eq 0 ]]; then
+  if [[ "${#missing[@]}" -eq 0 && "${#in_embed[@]}" -eq 0 ]]; then
     printf '%bAll requested PECL extensions are available.%b\n' "$GREEN" "$RESET"
-  else
-    printf '%bMissing extensions:%b\n' "$RED" "$RESET"
-    printf ' - %s\n' "${missing[@]}"
-    return 1
+    return 0
   fi
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    printf '%bMissing extensions:%b %s\n' "$RED" "$RESET" "${missing[*]}"
+  fi
+  if [[ "${#in_embed[@]}" -gt 0 ]]; then
+    printf '%bEnabled for embed but CLI-only:%b %s; run install to reconcile %s\n' \
+      "$RED" "$RESET" "${in_embed[*]}" "$PHP_EMBED_SCAN_DIR"
+  fi
+  return 1
 }
 
 info() {
@@ -846,6 +926,7 @@ main() {
       esac
       ;;
     freebsd) print_freebsd_deps ;;
+    macos) print_macos_deps ;;
     esac
     ;;
   *)
