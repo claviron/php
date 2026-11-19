@@ -13,6 +13,23 @@ and FPM installers print help without arguments. Building, installing extensions
 and installing service files are separate operations. Choose a supported PHP
 release explicitly when upgrading.
 
+## Files
+
+| File | What it is | Platforms |
+| --- | --- | --- |
+| `php-zts-install.sh` | Builds and installs ZTS PHP with the embed SAPI and FPM from the official php-src tag; `deps`, `dry-run`, `verify`, `install` | Linux, FreeBSD, macOS |
+| `php-zts-install-modules.sh` | Installs PECL extensions against that PHP and links them into the embed and CLI scan directories; ends with whether every requested extension loaded | Linux, FreeBSD, macOS |
+| `build-profile.sh` | The `release` and `debug` profiles (compiler flags, prefix, source directory); sourced by the two scripts above, not run itself | all |
+| `php-zts-verify-config.php` | The advisory configuration report `php-zts-install.sh` prints after its install check; it reports and never fails the install | all |
+| `php-zts-fpm.sh` | The FPM launcher a service manager runs: checks the version and configuration, then `check` (`php-fpm --test`) or `start` | Linux, macOS |
+| `php-zts-fpm-install.sh` | Installs the systemd unit, the launcher, the logrotate entry and the service environment file; does not start FPM | Linux |
+| `php-zts-fpm.service` | The systemd unit it installs | Linux |
+| `php-zts-fpm.logrotate` | The logrotate entry it installs | Linux |
+| `php-zts-fpm-install-freebsd.sh` | Installs the rc.d service from the native rc configuration; does not start FPM | FreeBSD |
+| `php-zts-fpm-macos.sh` | Installs FPM as a LaunchAgent of the active user and controls it: `install`, `start`, `stop`, `restart`, `reload`, `status`, `watch`, `uninstall` | macOS |
+| `php-zts-fpm.plist` | The LaunchAgent template `php-zts-fpm-macos.sh install` fills in | macOS |
+| `composer-install.sh` | Installs Composer after verifying its official installer's signature | all |
+
 ## Build profiles
 
 | Profile | Compiler flags | PHP debug / assertions | Default prefix | Default source |
