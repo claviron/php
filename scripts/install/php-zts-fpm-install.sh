@@ -4,7 +4,7 @@ set -euo pipefail
 case "${1:-help}" in
 help|-h|--help)
   cat <<'USAGE'
-Usage: sudo env PHP_VERSION=VERSION [PHP_INSTALL_DIR=/opt/php-zts-embed] \
+Usage: sudo env [PHP_INSTALL_DIR=/opt/php-zts-embed] \
   [PHP_CONFIG_DIR=PREFIX/etc] [PHP_INI_SCAN_DIR=PREFIX/etc/conf.d/fpm] \
   scripts/install/php-zts-fpm-install.sh install
 
@@ -26,12 +26,10 @@ esac
   exit 1
 }
 [[ $EUID == 0 ]] || { printf 'Run this installer as root.\n' >&2; exit 1; }
-: "${PHP_VERSION:?Set PHP_VERSION explicitly}"
 export PHP_INSTALL_DIR="${PHP_INSTALL_DIR:-/opt/php-zts-embed}"
 export PHP_CONFIG_DIR="${PHP_CONFIG_DIR:-$PHP_INSTALL_DIR/etc}"
 export PHP_INI_SCAN_DIR="${PHP_INI_SCAN_DIR:-$PHP_CONFIG_DIR/conf.d/fpm}"
-export PHP_VERSION PHP_CONFIG_DIR
-for value in "$PHP_VERSION" "$PHP_INSTALL_DIR" "$PHP_CONFIG_DIR" "$PHP_INI_SCAN_DIR"; do
+for value in "$PHP_INSTALL_DIR" "$PHP_CONFIG_DIR" "$PHP_INI_SCAN_DIR"; do
   [[ "$value" =~ ^[a-zA-Z0-9/._-]+$ ]] || {
     printf 'Environment values must contain only letters, digits, /, ., _ and -.\n' >&2
     exit 1
@@ -57,8 +55,8 @@ install -d /usr/local/libexec "$env_dir"
 install -m 0755 "$source_dir/php-zts-fpm.sh" /usr/local/libexec/php-zts-fpm
 install -m 0644 "$source_dir/php-zts-fpm.service" /etc/systemd/system/php-zts-fpm.service
 install -m 0644 "$source_dir/php-zts-fpm.logrotate" /etc/logrotate.d/php-zts-fpm
-printf 'PHP_VERSION=%s\nPHP_INSTALL_DIR=%s\nPHP_CONFIG_DIR=%s\nPHP_INI_SCAN_DIR=%s\n' \
-  "$PHP_VERSION" "$PHP_INSTALL_DIR" "$PHP_CONFIG_DIR" "$PHP_INI_SCAN_DIR" \
+printf 'PHP_INSTALL_DIR=%s\nPHP_CONFIG_DIR=%s\nPHP_INI_SCAN_DIR=%s\n' \
+  "$PHP_INSTALL_DIR" "$PHP_CONFIG_DIR" "$PHP_INI_SCAN_DIR" \
   >"$env_dir/php-zts-fpm"
 chmod 0644 "$env_dir/php-zts-fpm"
 systemctl daemon-reload

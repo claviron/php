@@ -3,7 +3,7 @@ set -euo pipefail
 
 # PHP-FPM on macOS as a LaunchAgent of the active user: it runs as that user,
 # through the same launcher (php-zts-fpm.sh) systemd uses on Linux, so the
-# installed PHP version and configuration are checked before every start.
+# configuration is checked before every start.
 #
 # The PHP installation under /opt is root-owned and only read. What FPM
 # writes stays with the user:
@@ -12,7 +12,7 @@ set -euo pipefail
 #                                               here (run/, log/), and the launcher
 #   ~/Library/Logs/php-zts-fpm.log               the service's standard output
 #
-# PHP_VERSION is required. PHP_INSTALL_DIR (default /opt/php-zts-embed),
+# PHP_INSTALL_DIR (default /opt/php-zts-embed),
 # PHP_CONFIG_DIR (default: its etc) and PHP_INI_SCAN_DIR (default:
 # PHP_CONFIG_DIR/conf.d/fpm) choose the installation and the php.ini,
 # php-fpm.conf and INI directory FPM uses.
@@ -29,7 +29,7 @@ LAUNCHCTL_TARGET="$LAUNCHCTL_DOMAIN/${SERVICE_NAME}"
 
 usage() {
   cat <<EOF
-Usage: PHP_VERSION=VERSION $(basename "$0") install
+Usage: $(basename "$0") install
        $(basename "$0") <start|stop|restart|reload|status|watch|uninstall>
 
   install    Check the installation and configuration, write the LaunchAgent
@@ -58,9 +58,7 @@ service_exists() {
 
 install_service() {
   [[ "$(uname -s)" == Darwin ]] || die "this script is for macOS; use php-zts-fpm-install.sh on Linux"
-  : "${PHP_VERSION:?Set PHP_VERSION explicitly}"
-  export PHP_VERSION
-  export PHP_INSTALL_DIR="${PHP_INSTALL_DIR:-/opt/php-zts-embed}"
+    export PHP_INSTALL_DIR="${PHP_INSTALL_DIR:-/opt/php-zts-embed}"
   export PHP_CONFIG_DIR="${PHP_CONFIG_DIR:-$PHP_INSTALL_DIR/etc}"
   export PHP_INI_SCAN_DIR="${PHP_INI_SCAN_DIR:-$PHP_CONFIG_DIR/conf.d/fpm}"
   export PHP_FPM_PREFIX="$STATE_DIR"
@@ -71,8 +69,8 @@ install_service() {
   "$LAUNCHER" check
 
   local environment
-  environment="$(printf '{"PHP_VERSION":"%s","PHP_INSTALL_DIR":"%s","PHP_CONFIG_DIR":"%s","PHP_INI_SCAN_DIR":"%s","PHP_FPM_PREFIX":"%s"}' \
-    "$PHP_VERSION" "$PHP_INSTALL_DIR" "$PHP_CONFIG_DIR" "$PHP_INI_SCAN_DIR" "$PHP_FPM_PREFIX")"
+  environment="$(printf '{"PHP_INSTALL_DIR":"%s","PHP_CONFIG_DIR":"%s","PHP_INI_SCAN_DIR":"%s","PHP_FPM_PREFIX":"%s"}' \
+    "$PHP_INSTALL_DIR" "$PHP_CONFIG_DIR" "$PHP_INI_SCAN_DIR" "$PHP_FPM_PREFIX")"
   cp "$PLIST_TEMPLATE" "$PLIST_DEST"
   plutil -replace ProgramArguments -json "[\"$LAUNCHER\",\"start\"]" "$PLIST_DEST"
   plutil -replace EnvironmentVariables -json "$environment" "$PLIST_DEST"

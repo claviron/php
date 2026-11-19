@@ -21,7 +21,7 @@ release explicitly when upgrading.
 | `php-zts-install-modules.sh` | Installs PECL extensions against that PHP and links them into the embed and CLI scan directories; ends with whether every requested extension loaded | Linux, FreeBSD, macOS |
 | `build-profile.sh` | The `release` and `debug` profiles (compiler flags, prefix, source directory); sourced by the two scripts above, not run itself | all |
 | `php-zts-verify-config.php` | The advisory configuration report `php-zts-install.sh` prints after its install check; it reports and never fails the install | all |
-| `php-zts-fpm.sh` | The FPM launcher a service manager runs: checks the version and configuration, then `check` (`php-fpm --test`) or `start` | Linux, macOS |
+| `php-zts-fpm.sh` | The FPM launcher a service manager runs: checks the configuration, then `check` (`php-fpm --test`) or `start` | Linux, macOS |
 | `php-zts-fpm-install.sh` | Installs the systemd unit, the launcher, the logrotate entry and the service environment file; does not start FPM | Linux |
 | `php-zts-fpm.service` | The systemd unit it installs | Linux |
 | `php-zts-fpm.logrotate` | The logrotate entry it installs | Linux |
@@ -108,9 +108,10 @@ not create them. Preserve existing socket paths and pool identities when
 replacing a service.
 
 On Linux and macOS the service starts FPM through one launcher,
-`php-zts-fpm.sh`. Before every start it checks that the installation is the
-expected `PHP_VERSION` and that `php.ini`, `php-fpm.conf` and the scan
-directory exist. The service environment chooses them: `PHP_INSTALL_DIR`,
+`php-zts-fpm.sh`. Before every start it checks that `php.ini`, `php-fpm.conf`
+and the scan directory exist and that FPM accepts the configuration. It runs
+whatever release is installed, so upgrading PHP needs only a restart of the
+service. The service environment chooses them: `PHP_INSTALL_DIR`,
 `PHP_CONFIG_DIR` (the directory holding `php.ini` and `php-fpm.conf`) and
 `PHP_INI_SCAN_DIR`. `PHP_FPM_PREFIX`, when set, is FPM's `--prefix`, under
 which relative pid and log paths in `php-fpm.conf` resolve.
@@ -118,8 +119,7 @@ which relative pid and log paths in `php-fpm.conf` resolve.
 Linux with systemd:
 
 ```sh
-sudo env PHP_VERSION=8.5.13 \
-  scripts/install/php-zts-fpm-install.sh install
+sudo scripts/install/php-zts-fpm-install.sh install
 ```
 
 This validates the selected runtime and configuration, then installs the unit,
@@ -131,8 +131,7 @@ leaves the system's `php` command alone.
 FreeBSD:
 
 ```sh
-sudo env PHP_VERSION=8.5.13 \
-  scripts/install/php-zts-fpm-install-freebsd.sh install
+sudo scripts/install/php-zts-fpm-install-freebsd.sh install
 ```
 
 This reads `php_zts_fpm` settings from the native rc configuration, validates
@@ -145,7 +144,7 @@ FreeBSD compiler and dependency paths. The generated service uses graceful
 macOS, as a LaunchAgent of the active user:
 
 ```sh
-PHP_VERSION=8.5.13 scripts/install/php-zts-fpm-macos.sh install
+scripts/install/php-zts-fpm-macos.sh install
 ```
 
 FPM runs as that user. The installation under `/opt/php-zts-embed` stays
