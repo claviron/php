@@ -6,7 +6,7 @@ PHP_INSTALL_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$PHP_INSTALL_SCRIPT_DIR/build-profile.sh"
 php_zts_profile_init
 
-PHP_VERSION="${PHP_VERSION:-8.5.13}"
+PHP_VERSION="${PHP_VERSION:-8.6.0}"
 RECONFIGURE=0
 PHP_SOURCE_CHANGED=0
 
@@ -748,6 +748,34 @@ write_default_ini() {
   fi
 }
 
+write_macos_fpm_defaults() (
+  local global_config="$PHP_CONFIG_DIR/php-fpm.conf"
+  local pool_dir="$PHP_CONFIG_DIR/php-fpm.d"
+  local fpm_templates="$PHP_SRC_DIR/sapi/fpm"
+  local config
+
+  sudo_cmd mkdir -p -m 0755 "$PHP_CONFIG_DIR/conf.d/fpm"
+  [[ ! -s "$global_config" && ! -L "$global_config" ]] || return 0
+  sudo_cmd mkdir -p -m 0755 "$pool_dir"
+  config="$(mktemp)"
+  trap 'rm -f "$config"' EXIT
+
+  shopt -s nullglob
+  local pools=("$pool_dir"/*.conf)
+  if ((${#pools[@]} == 0)); then
+    sed -e 's|^listen = .*|listen = run/php-fpm.sock|' \
+      -e 's/^;listen\.mode = .*/listen.mode = 0600/' \
+      "$fpm_templates/www.conf" >"$config"
+    sudo_cmd install -m 0644 "$config" "$pool_dir/www.conf"
+  fi
+
+  # The LaunchAgent supplies its own prefix for the socket and logs. Use an
+  # absolute include so pool files still resolve in the configuration directory.
+  sed '/^include=/d' "$fpm_templates/php-fpm.conf" >"$config"
+  printf 'include="%s/*.conf"\n' "$pool_dir" >>"$config"
+  sudo_cmd install -m 0644 "$config" "$global_config"
+)
+
 # The embed library's file name: macOS builds a dylib.
 libphp_path() {
   if [[ "$(detect_os)" == "macos" ]]; then
@@ -777,11 +805,34 @@ fix_runtime_permissions() {
     die "owner $PHP_OWNER:$PHP_GROUP does not exist; set PHP_OWNER and PHP_GROUP"
   fi
 
-  sudo_cmd find "$PHP_DIR" -type d -exec chmod 0755 {} +
-  sudo_cmd find "$PHP_DIR" -type f -exec chmod u=rwX,go=rX {} +
+  if [[ "$(detect_os)" == macos ]]; then
+    # Keep operator configuration permissions when preparing the user agent.
+    sudo_cmd find "$PHP_DIR" \( -path "$PHP_CONFIG_DIR/php-fpm.d" -o -path "$PHP_CONFIG_DIR/php-fpm.conf" \) -prune \
+      -o \( -type d -exec chmod 0755 {} + \) -o \( -type f -exec chmod u=rwX,go=rX {} + \)
+  else
+    sudo_cmd find "$PHP_DIR" -type d -exec chmod 0755 {} +
+    sudo_cmd find "$PHP_DIR" -type f -exec chmod u=rwX,go=rX {} +
+  fi
   sudo_cmd find "$PHP_DIR/bin" -type f -exec chmod 0755 {} +
   sudo_cmd find "$PHP_DIR/sbin" -type f -exec chmod 0755 {} + 2>/dev/null || true
   [[ -f "$(libphp_path)" ]] && sudo_cmd chmod 0755 "$(libphp_path)"
+  # Every process that embeds or runs this PHP reads php.ini as its own user.
+  # Named here because the configuration directory may lie outside PHP_DIR.
+  sudo_cmd chmod 0644 "$PHP_CONFIG_DIR/php.ini"
+}
+
+# PHP starts without complaint when it cannot read php.ini and runs on its
+# built-in defaults, so the file being present proves nothing: ask PHP.
+require_loaded_ini() {
+  local ini="$PHP_CONFIG_DIR/php.ini"
+  local loaded
+
+  [[ -f "$ini" ]] || die "php.ini is missing: $ini"
+  [[ -n "$(find "$ini" -perm -0004 2>/dev/null)" ]] ||
+    die "php.ini is not readable by other users: $ini (expected mode 0644)"
+  loaded="$(PHPRC="$ini" PHP_INI_SCAN_DIR="$PHP_EMBED_SCAN_DIR" "$PHP_DIR/bin/php" -r 'echo (string) php_ini_loaded_file();')"
+  [[ "$loaded" == "$ini" ]] ||
+    die "PHP did not load $ini as $(id -un) (loaded: ${loaded:-none})"
 }
 
 register_runtime_library() {
@@ -842,6 +893,7 @@ verify_install() {
   fi
   php_zts_require_profile
   [[ "$("$PHP_DIR/bin/php" -n -r 'echo (int) PHP_ZTS;')" == 1 ]] || die 'Expected a ZTS PHP build.'
+  require_loaded_ini
 
   PHPRC="$PHP_CONFIG_DIR/php.ini" PHP_INI_SCAN_DIR="$PHP_EMBED_SCAN_DIR" "$PHP_DIR/bin/php" -v
   "$PHP_DIR/bin/php-config" --php-sapis
@@ -1020,6 +1072,9 @@ main() {
   verify_pkg_config
   build_php
   write_default_ini
+  if [[ "$os" == macos && "$PHP_ENABLE_FPM" == 1 ]]; then
+    write_macos_fpm_defaults
+  fi
   fix_runtime_permissions
   register_runtime_library
   verify_install

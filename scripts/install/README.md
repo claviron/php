@@ -39,9 +39,9 @@ release explicitly when upgrading.
 
 ```sh
 scripts/install/php-zts-install.sh dry-run
-PHP_VERSION=8.5.13 scripts/install/php-zts-install.sh install
+PHP_VERSION=8.6.0 scripts/install/php-zts-install.sh install
 
-PHP_BUILD_PROFILE=debug PHP_VERSION=8.5.13 \
+PHP_BUILD_PROFILE=debug PHP_VERSION=8.6.0 \
   scripts/install/php-zts-install.sh install
 ```
 
@@ -102,10 +102,9 @@ does not remove other builds' temporary files.
 
 ## FPM service helpers
 
-Prepare the selected installation's `php.ini`, `php-fpm.conf`, pools and FPM
-INI scan directory before installing a service helper; the PHP builder does
-not create them. Preserve existing socket paths and pool identities when
-replacing a service.
+On Linux and FreeBSD, prepare the selected installation's `php-fpm.conf`,
+pools and FPM INI scan directory before installing the service. Preserve
+existing socket paths and pool identities when replacing a service.
 
 On Linux and macOS the service starts FPM through one launcher,
 `php-zts-fpm.sh`. Before every start it checks that `php.ini`, `php-fpm.conf`
@@ -147,9 +146,17 @@ macOS, as a LaunchAgent of the active user:
 scripts/install/php-zts-fpm-macos.sh install
 ```
 
+The PHP builder creates the FPM INI scan directory and fills a missing or
+empty `php-fpm.conf` from PHP's defaults. When there are no configured pools,
+it creates one with a Unix socket at
+`~/Library/Application Support/php-zts-fpm/run/php-fpm.sock`. The socket has
+mode `0600`, so applications connect as the LaunchAgent's user. Set the listener
+in the pool before installing the LaunchAgent if the application uses a
+different socket.
+
 FPM runs as that user. The installation under `/opt/php-zts-embed` stays
 root-owned and is only read; what FPM writes stays with the user: its prefix
-(relative pid and log paths) in `~/Library/Application Support/php-zts-fpm`,
+(relative socket, pid and log paths) in `~/Library/Application Support/php-zts-fpm`,
 and the service output in `~/Library/Logs/php-zts-fpm.log`. Install checks
 the configuration before it starts FPM. `start`, `stop`, `restart`, `reload`,
 `status`, `watch` and `uninstall` manage it; use `--help` first.

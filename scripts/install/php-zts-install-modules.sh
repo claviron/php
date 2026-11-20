@@ -293,6 +293,19 @@ check_php_build_contract() {
   esac
 }
 
+# PHP starts without complaint when it cannot read php.ini and runs on its
+# built-in defaults, so the file being present proves nothing: ask PHP.
+require_loaded_ini() {
+  local loaded
+
+  [[ -f "$PHP_INI" ]] || die "php.ini is missing: $PHP_INI"
+  [[ -n "$(find "$PHP_INI" -perm -0004 2>/dev/null)" ]] ||
+    die "php.ini is not readable by other users: $PHP_INI (expected mode 0644; fix with: sudo chmod 0644 $PHP_INI)"
+  loaded="$(PHPRC="$PHP_INI" PHP_INI_SCAN_DIR="$PHP_EMBED_SCAN_DIR" "$PHP" -r 'echo (string) php_ini_loaded_file();')"
+  [[ "$loaded" == "$PHP_INI" ]] ||
+    die "PHP did not load $PHP_INI as $(id -un) (loaded: ${loaded:-none})"
+}
+
 check_environment() {
   require_executable "$PHP" "php"
   require_executable "$PHPIZE" "phpize"
@@ -300,6 +313,7 @@ check_environment() {
   require_executable "$PECL" "pecl"
   check_php_build_contract
   php_zts_require_profile
+  require_loaded_ini
   resolve_php_ext_dir
 
   for cmd in "${REQUIRED_COMMANDS[@]}"; do
@@ -712,6 +726,10 @@ finish_runtime_install() {
   account_exists passwd "$PHP_OWNER" && account_exists group "$PHP_GROUP" ||
     die "owner $PHP_OWNER:$PHP_GROUP does not exist; set PHP_OWNER and PHP_GROUP"
   root_cmd chown -R "$PHP_OWNER:$PHP_GROUP" "$PHP_DIR"
+  # Whatever ran above as root, php.ini stays readable by every user that
+  # runs this PHP, and PHP is asked whether it really loads it.
+  root_cmd chmod 0644 "$PHP_INI"
+  require_loaded_ini
 
   if [[ "$PHP_BUILD_PROFILE" == debug ]]; then
     log 'Debug extensions stay in the private debug prefix; ldconfig is unchanged.'

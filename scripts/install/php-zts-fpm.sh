@@ -17,11 +17,23 @@ set -euo pipefail
 export PHPRC="$PHP_CONFIG_DIR/php.ini"
 export PHP_INI_SCAN_DIR="${PHP_INI_SCAN_DIR:-$PHP_CONFIG_DIR/conf.d/fpm}"
 
-[[ -r "$PHPRC" && -r "$PHP_CONFIG_DIR/php-fpm.conf" && -d "$PHP_INI_SCAN_DIR" ]] || {
-  printf 'PHP configuration is incomplete in %s: php.ini, php-fpm.conf and the scan directory %s are required\n' \
-    "$PHP_CONFIG_DIR" "$PHP_INI_SCAN_DIR" >&2
+# Name what is wrong: a file that exists but cannot be read by this user is a
+# different repair from a file that was never written.
+config_problems=()
+for config_file in "$PHPRC" "$PHP_CONFIG_DIR/php-fpm.conf"; do
+  if [[ ! -e "$config_file" ]]; then
+    config_problems+=("missing: $config_file")
+  elif [[ ! -r "$config_file" ]]; then
+    config_problems+=("not readable by $(id -un): $config_file")
+  fi
+done
+[[ -d "$PHP_INI_SCAN_DIR" ]] ||
+  config_problems+=("missing scan directory: $PHP_INI_SCAN_DIR")
+if ((${#config_problems[@]})); then
+  printf 'PHP-FPM cannot start with the configuration in %s:\n' "$PHP_CONFIG_DIR" >&2
+  printf '  %s\n' "${config_problems[@]}" >&2
   exit 1
-}
+fi
 
 prefix_args=()
 if [[ -n "${PHP_FPM_PREFIX:-}" ]]; then

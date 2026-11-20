@@ -58,7 +58,8 @@ service_exists() {
 
 install_service() {
   [[ "$(uname -s)" == Darwin ]] || die "this script is for macOS; use php-zts-fpm-install.sh on Linux"
-    export PHP_INSTALL_DIR="${PHP_INSTALL_DIR:-/opt/php-zts-embed}"
+  [[ $EUID != 0 ]] || die "install the LaunchAgent as the user who will run it"
+  export PHP_INSTALL_DIR="${PHP_INSTALL_DIR:-/opt/php-zts-embed}"
   export PHP_CONFIG_DIR="${PHP_CONFIG_DIR:-$PHP_INSTALL_DIR/etc}"
   export PHP_INI_SCAN_DIR="${PHP_INI_SCAN_DIR:-$PHP_CONFIG_DIR/conf.d/fpm}"
   export PHP_FPM_PREFIX="$STATE_DIR"
