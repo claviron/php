@@ -6,7 +6,7 @@ PHP_INSTALL_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$PHP_INSTALL_SCRIPT_DIR/build-profile.sh"
 php_zts_profile_init
 
-PHP_VERSION="${PHP_VERSION:-8.6.0}"
+PHP_VERSION="${PHP_VERSION:-8.5.13}"
 RECONFIGURE=0
 PHP_SOURCE_CHANGED=0
 

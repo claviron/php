@@ -18,7 +18,7 @@ release explicitly when upgrading.
 | File | What it is | Platforms |
 | --- | --- | --- |
 | `php-zts-install.sh` | Builds and installs ZTS PHP with the embed SAPI and FPM from the official php-src tag; `deps`, `dry-run`, `verify`, `install` | Linux, FreeBSD, macOS |
-| `php-zts-install-modules.sh` | Installs PECL extensions against that PHP and links them into the embed and CLI scan directories; ends with whether every requested extension loaded | Linux, FreeBSD, macOS |
+| `php-zts-install-modules.sh` | Installs stable extensions with PIE, configures the embed and CLI scan directories, and reports which requested extensions load | Linux, FreeBSD, macOS |
 | `build-profile.sh` | The `release` and `debug` profiles (compiler flags, prefix, source directory); sourced by the two scripts above, not run itself | all |
 | `php-zts-verify-config.php` | The advisory configuration report `php-zts-install.sh` prints after its install check; it reports and never fails the install | all |
 | `php-zts-fpm.sh` | The FPM launcher a service manager runs: checks the configuration, then `check` (`php-fpm --test`) or `start` | Linux, macOS |
@@ -39,9 +39,9 @@ release explicitly when upgrading.
 
 ```sh
 scripts/install/php-zts-install.sh dry-run
-PHP_VERSION=8.6.0 scripts/install/php-zts-install.sh install
+PHP_VERSION=8.5.13 scripts/install/php-zts-install.sh install
 
-PHP_BUILD_PROFILE=debug PHP_VERSION=8.6.0 \
+PHP_BUILD_PROFILE=debug PHP_VERSION=8.5.13 \
   scripts/install/php-zts-install.sh install
 ```
 
@@ -57,8 +57,8 @@ systems (Linux, FreeBSD) libphp is built with two more flags:
   not with `dlopen`.
 
 macOS gets neither: Mach-O symbols are not interposable, and its thread locals
-use a single mechanism. PECL extensions never get them, because PHP loads them
-with `dlopen`. Two further steps are planned and will be measured before they
+use a single mechanism. Third-party extensions never get them, because PHP
+loads them with `dlopen`. Two further steps are planned and will be measured before they
 become defaults: profile-guided optimization (php-src's `make prof-gen` and
 `make prof-use` with a training workload), and `-march=native`, which ties the
 binary to the CPU it was built on and therefore stays opt-in.
@@ -82,6 +82,12 @@ application; do not mix release and debug extension binaries.
 
 ## Extensions and Xdebug
 
+Install a stable [PHP Installer for Extensions (PIE) release](https://github.com/php/pie/releases)
+(1.5.0 or newer) and make the executable available as `pie` on `PATH`. The
+[PIE installation instructions](https://php.github.io/pie/) describe how to
+verify the release attestation and install either the executable or the PHAR.
+Set `PIE` to the executable's path if needed.
+
 PHP's debug build adds engine diagnostics. Xdebug is a separately compiled
 extension for PHP debugging, profiling and related tools; using Xdebug does
 not require a PHP debug build. Neither default installer command installs it.
@@ -95,10 +101,21 @@ PHP_BUILD_PROFILE=debug \
   scripts/install/php-zts-install-modules.sh install-xdebug
 ```
 
-The module installer uses the matching profile and prefix, checks the PHP ABI,
-and keeps Xdebug in the CLI scan directory. Embedded requests do not load it.
-PECL builds use an invocation-owned temporary directory. Module installation
-does not remove other builds' temporary files.
+The installer gives PIE the selected profile's `php-config` and `phpize`.
+It checks that newly built modules load and report a stable version before
+copying them from the temporary build directory into the PHP prefix.
+A working existing extension is reused and its installed version is reported,
+including manually installed prereleases.
+
+`install` and `install-embed` enable Redis for embed and CLI.
+`install-optional` requests event, uv, igbinary, msgpack, zstd and parallel
+for CLI. Xdebug is available for CLI through `install-xdebug`. When a requested
+extension is missing and no stable compatible release can be installed, the
+command reports the extension and exits unsuccessfully. Upstream uv releases
+are beta, so uv requires a working existing installation.
+
+The installer configures the embed and CLI scan directories itself. Configure
+extension activation for FPM through its own scan directory.
 
 ## FPM service helpers
 
