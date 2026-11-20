@@ -71,7 +71,8 @@ claviron-runtime = { version = "0.2.7" }
 claviron-tasks = { version = "0.2.6" }
 claviron-types = { version = "0.2.6" }
 congif = "0.0.1"
-ext-php-rs = { version = "0.16", default-features = false }
+# 0.16.5 is the first release that accepts PHP 8.6.
+ext-php-rs = { version = "0.16.5", default-features = false }
 fastcgi-client = "0.12"
 fastrand = "2.4"
 futures = "0.3"
