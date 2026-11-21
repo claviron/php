@@ -1,6 +1,6 @@
 [package]
 name = "claviron-php-embed"
-version.workspace = true
+version = "0.2.5"
 publish.workspace = true
 edition.workspace= true
 description = "Managed in-process PHP execution, application hosting, and native extensions for Claviron"

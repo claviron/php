@@ -1,6 +1,6 @@
 {
   "name": "claviron/sapi",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "PHP declarations, fail-fast native API fallbacks and a Monolog handler for Claviron's embedded SAPI",
   "type": "library",
   "license": "MIT",

@@ -1,6 +1,6 @@
 [package]
 name = "claviron-php"
-version.workspace = true
+version = "0.2.5"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -29,10 +29,10 @@ postgres = ["claviron-php-embed?/postgres"]
 
 [dependencies]
 claviron-php-core = { workspace = true, optional = true }
-claviron-php-embed = { version = "0.2.4", path = "crates/embed", optional = true }
-claviron-php-fcgi = { version = "0.2.3", path = "crates/fcgi", optional = true }
+claviron-php-embed = { version = "0.2.5", path = "crates/embed", optional = true }
+claviron-php-fcgi = { version = "0.2.4", path = "crates/fcgi", optional = true }
 claviron-pipeline = { workspace = true, optional = true }
-claviron-edge = { version = "0.2.6", optional = true }
+claviron-edge = { version = "0.2.7", optional = true }
 claviron-http = { workspace = true, optional = true }
 claviron-runtime = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
@@ -45,7 +45,6 @@ members = ["crates/core", "crates/embed", "crates/fcgi"]
 resolver = "3"
 
 [workspace.package]
-version = "0.2.4"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/claviron/php"
@@ -59,17 +58,17 @@ async-trait = "0.1"
 bytes = "1.11"
 claviron-app = { version = "0.2.6" }
 claviron-auth = { version = "0.2.6" }
-claviron-cache = { version = "0.2.6" }
+claviron-cache = { version = "0.2.7" }
 claviron-db = { version = "0.2.6", default-features = false }
 claviron-helpers = { version = "0.2.6" }
-claviron-http = { version = "0.2.6" }
+claviron-http = { version = "0.2.7" }
 claviron-logging = { version = "0.2.6" }
-claviron-orbit = { version = "0.2.7" }
-claviron-php-core = { version = "0.2.3", path = "crates/core" }
-claviron-pipeline = { version = "0.2.6" }
+claviron-orbit = { version = "0.2.8" }
+claviron-php-core = { version = "0.2.4", path = "crates/core" }
+claviron-pipeline = { version = "0.2.7" }
 claviron-runtime = { version = "0.2.7" }
 claviron-tasks = { version = "0.2.6" }
-claviron-types = { version = "0.2.6" }
+claviron-types = { version = "0.2.7" }
 congif = "0.0.1"
 # 0.16.5 is the first release that accepts PHP 8.6.
 ext-php-rs = { version = "0.16.5", default-features = false }

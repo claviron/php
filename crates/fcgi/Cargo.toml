@@ -1,7 +1,7 @@
 [package]
 autotests = false
 name = "claviron-php-fcgi"
-version = "0.2.3"
+version = "0.2.4"
 publish.workspace = true
 edition.workspace= true
 description = "PHP-FPM FastCGI gateway with connection pooling and streaming responses for Claviron"

@@ -10,6 +10,8 @@ function require_same($expected, $actual): void
     }
 }
 require_same(true, claviron_runtime_available());
+// The name an application tests for and `php -m` lists.
+require_same(true, extension_loaded('claviron'));
 require_same('php-extension-test', claviron_app_name());
 require_same(true, claviron_is_on_http());
 require_same(false, claviron_is_cancelled());

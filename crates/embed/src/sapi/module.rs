@@ -18,8 +18,7 @@ static MODULE_STARTUP: ext_php_rs::internal::ModuleStartupMutex =
 pub(crate) fn prepare_module(
     extensions: &[Arc<dyn PhpEmbedExtension>]
 ) -> Result<Option<*mut ModuleEntry>, String> {
-    let builder =
-        ModuleBuilder::new("claviron-host", env!("CARGO_PKG_VERSION"));
+    let builder = ModuleBuilder::new("claviron", env!("CARGO_PKG_VERSION"));
     let (mut builder, has_observers) =
         crate::observer::configure_module(builder, extensions)?;
     // Runtime Event is always native. Optional capabilities add
